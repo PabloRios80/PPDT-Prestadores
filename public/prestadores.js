@@ -75,6 +75,31 @@ async function buscarPracticas() {
     infoAfiliado.classList.add('hidden');
     loading.classList.remove('hidden');
 
+     // ── VERIFICAR AFILIACIÓN IAPOS ──
+    try {
+        const iaposRes = await fetch(`/verificar-afiliado/${dni}`);
+        const iaposData = await iaposRes.json();
+
+        if (!iaposData.esActivo) {
+            loading.classList.add('hidden');
+            lista.innerHTML = `
+                <div class="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+                    <i class="fas fa-times-circle text-red-500 text-2xl mb-2"></i>
+                    <p class="font-bold text-red-700">DNI no corresponde a un afiliado activo de IAPOS.</p>
+                    <p class="text-sm text-red-500 mt-1">Verificá el número ingresado.</p>
+                </div>`;
+            return;
+        }
+
+        // Mostrar info del afiliado verificado
+        document.getElementById('nombreAfiliado').textContent = '👤 ' + (iaposData.nombre || 'DNI: ' + dni);
+        document.getElementById('especialidadVista').textContent = 'Prácticas de ' + prestadorActual.especialidad;
+        infoAfiliado.classList.remove('hidden');
+
+    } catch(e) {
+        console.warn('No se pudo verificar IAPOS, continuando...', e.message);
+    }
+
     try {
         const response = await fetch(
             `/getPracticasPrestador/${dni}/${encodeURIComponent(prestadorActual.especialidad)}`
@@ -83,13 +108,7 @@ async function buscarPracticas() {
         loading.classList.add('hidden');
 
         if (data.success && data.practicas.length > 0) {
-            const primera = data.practicas[0];
-            document.getElementById('nombreAfiliado').textContent =
-                '👤 ' + (primera.nombre_completo || 'Afiliado DNI: ' + dni);
-            document.getElementById('especialidadVista').textContent =
-                'Prácticas de ' + prestadorActual.especialidad;
-            infoAfiliado.classList.remove('hidden');
-
+            
             const modoCarga = document.getElementById('modoCargaLab');
             if (prestadorActual.especialidad === 'Laboratorio Bioquimico') {
                 modoCarga.classList.remove('hidden');
