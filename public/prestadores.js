@@ -1062,6 +1062,7 @@ async function confirmarCargaPDFLab(data, mapeo) {
 function mapearEspecialidad(rol) {
     const MAPA = {
         'bioquimico':    'Laboratorio Bioquimico',
+        'laboratorio':   'Laboratorio Bioquimico',
         'imagenes':      'Diagnostico por Imagenes',
         'gastro':        'Gastroenterologia',
         'densitometria': 'Diagnostico por Imagenes',
