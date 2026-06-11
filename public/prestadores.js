@@ -37,14 +37,13 @@ async function hacerLogin() {
         errorDiv.classList.remove('hidden');
     }
 }
-
 function mostrarPortal() {
     document.getElementById('pantallaLogin').classList.add('hidden');
     document.getElementById('portalPrincipal').classList.remove('hidden');
     document.getElementById('headerNombre').textContent = prestadorActual.nombre;
     document.getElementById('headerAcciones').classList.remove('hidden');
     document.getElementById('headerEspecialidad').textContent =
-        prestadorActual.especialidad + ' — ' + prestadorActual.ciudad;
+        prestadorActual.especialidad + (prestadorActual.ciudad ? ' — ' + prestadorActual.ciudad : '');
 }
 
 function cerrarSesion() {
@@ -1060,6 +1059,18 @@ async function confirmarCargaPDFLab(data, mapeo) {
             </div>`;
     }
 }
+function mapearEspecialidad(rol) {
+    const MAPA = {
+        'bioquimico':    'Laboratorio Bioquimico',
+        'imagenes':      'Diagnostico por Imagenes',
+        'gastro':        'Gastroenterologia',
+        'densitometria': 'Diagnostico por Imagenes',
+        'biopsias':      'Laboratorio Bioquimico',
+        'papanicolau':   'Laboratorio Bioquimico',
+        'oftalmologia':  'Medicina'
+    };
+    return MAPA[rol] || 'Medicina';
+}
 
 // ==========================================
 // UTILIDADES
@@ -1070,17 +1081,15 @@ const toBase64 = file => new Promise((resolve, reject) => {
     reader.onload = () => resolve(reader.result.split(',')[1]);
     reader.onerror = error => reject(error);
 });
-
 document.addEventListener('DOMContentLoaded', () => {
-    const sesionGuardada = sessionStorage.getItem('prestador');
-    if (sesionGuardada) {
-        prestadorActual = JSON.parse(sesionGuardada);
-        mostrarPortal();
-    }
+    prestadorActual = {
+        nombre: window.dpProfesional,
+        especialidad: mapearEspecialidad(window.dpRol),
+        id: window.dpRol
+    };
+    mostrarPortal();
+
     document.getElementById('btnGuardarPractica').addEventListener('click', guardarPractica);
-    document.getElementById('loginPassword').addEventListener('keypress', e => {
-        if (e.key === 'Enter') hacerLogin();
-    });
     document.getElementById('dniSearch')?.addEventListener('keypress', e => {
         if (e.key === 'Enter') buscarPracticas();
     });
