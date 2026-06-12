@@ -684,6 +684,33 @@ function extraerValoresLaboratorio(texto) {
         return null;
     }
 
+    // Busca en la línea "Resultado..... valor" del Hospital Italiano
+    function buscarEnLineaResultado(terminosClave, tipo = 'numero') {
+        for (let i = 0; i < lineas.length; i++) {
+            const lineaUpper = lineas[i].toUpperCase()
+                .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const encontrado = terminosClave.some(t =>
+                lineaUpper.includes(t.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))
+            );
+            if (encontrado) {
+                for (let j = i; j < Math.min(i + 6, lineas.length); j++) {
+                    const lj = lineas[j].toUpperCase()
+                        .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                    if (lj.startsWith('RESULTADO')) {
+                        if (tipo === 'numero') {
+                            const m = lineas[j].match(/(\d+[.,]?\d*\s*(?:mg\/d[lI]|g\/l|ml\/min|ng\/ml|%|mg\/l|u\/l))/i);
+                            if (m) return m[1].trim();
+                        } else {
+                            const m = lineas[j].match(/(NO REACTIVO|REACTIVO|NEGATIVO|POSITIVO|NO DETECTABLE|DETECTABLE)/i);
+                            if (m) return m[1].toUpperCase();
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     function buscarColesterolTotal() {
         for (let i = 0; i < lineas.length; i++) {
             const l = lineas[i].toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -744,7 +771,7 @@ function extraerValoresLaboratorio(texto) {
     function buscarFiltradoGlomerular() {
         for (let i = 0; i < lineas.length; i++) {
             const l = lineas[i].toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            if (l.includes('FILTRADO GLOMERULAR') || l.includes('FILTRO GLOMERULAR') || 
+            if (l.includes('FILTRADO GLOMERULAR') || l.includes('FILTRO GLOMERULAR') ||
                 l.includes('FILTRACION GLOMERULAR') || l.includes('FILTRACIÓN GLOMERULAR')) {
                 for (let j = i; j < Math.min(i + 4, lineas.length); j++) {
                     const m = lineas[j].match(/(\d+[.,]\d+)\s*ml\/min/i);
@@ -772,6 +799,9 @@ function extraerValoresLaboratorio(texto) {
                 }
             }
         }
+        // Formato Hospital Italiano: "Resultado .... Negativo"
+        const porResultado = buscarEnLineaResultado(['SANGRE OCULTA EN MATERIA FECAL', 'SOMF'], 'estado');
+        if (porResultado) return porResultado;
         return null;
     }
 
@@ -804,20 +834,20 @@ function extraerValoresLaboratorio(texto) {
 
     return {
         glucemia:                        buscarValor(['GLUCOSA', 'GLUCEMIA', 'GLUCEMIA EN AYUNAS', 'GLICEMIA', 'GLICEMIA BASAL']),
-        trigliceridos:                   buscarValor(['TRIGLICERIDOS', 'TRIGLICÉRIDOS']),
-        colesterol_total:                buscarColesterolTotal(),
-        colesterol_hdl:                  buscarHDL(),
-        colesterol_ldl:                  buscarLDL(),
+        trigliceridos:                   buscarValor(['TRIGLICERIDOS', 'TRIGLICÉRIDOS']) || buscarEnLineaResultado(['TRIGLICERIDOS', 'TRIGLICÉRIDOS'], 'numero'),
+        colesterol_total:                buscarColesterolTotal() || buscarEnLineaResultado(['COLESTEROL TOTAL', '* COLESTEROL TOTAL'], 'numero'),
+        colesterol_hdl:                  buscarHDL() || buscarEnLineaResultado(['COLESTEROL - HDL', 'HDL - COLESTEROL'], 'numero'),
+        colesterol_ldl:                  buscarLDL() || buscarEnLineaResultado(['COLESTEROL - LDL', 'LDL - COLESTEROL'], 'numero'),
         creatinina:                      buscarValor(['CREATININA', 'CREATININEMIA']),
         indice_filtrado_glomerular:      buscarFiltradoGlomerular(),
         psa:                             buscarValor(['PSA', 'PSA - AG', 'PROSTATICO', 'PROSTÁTICO', 'ANTIGENO PROSTATICO', 'ANTÍGENO PROSTÁTICO']),
-        hiv:                             buscarEstado(['HIV', 'VIH', 'HIV COMBO']),
-        hepatitis_b_antigeno_superficie: buscarEstado(['HBSAG', 'AG DE SUPERFICIE', 'HEPATITIS B - HBS', 'ANTIGENO SUP. HEPATITIS B', 'HBSAG']),
-        hepatitis_b_anti_core:           buscarEstado(['ANTI HBC', 'ANTI HBC (CORE)', 'AC. IGG ANTI HBC', 'HEPATITIS B - AC. IGG', 'AC.ANTI-HBCORE', 'ANTI-HBCORE']),
-        hepatitis_c:                     buscarEstado(['HEPATITIS C', 'ANTI HCV', 'HCV', 'AC. ANTI-HCV', 'ANTI-HCV']),
-        vdrl:                            buscarEstado(['VDRL', 'USR', 'V.D.R.L']),
+        hiv:                             buscarEstado(['HIV', 'VIH', 'HIV COMBO']) || buscarEnLineaResultado(['HIV COMBO', 'HIV'], 'estado'),
+        hepatitis_b_antigeno_superficie: buscarEstado(['HBSAG', 'AG DE SUPERFICIE', 'HEPATITIS B - HBS', 'ANTIGENO SUP. HEPATITIS B']) || buscarEnLineaResultado(['ANTIGENO SUP. HEPATITIS B', 'HBSAG'], 'estado'),
+        hepatitis_b_anti_core:           buscarEstado(['ANTI HBC', 'ANTI HBC (CORE)', 'AC. IGG ANTI HBC', 'AC.ANTI-HBCORE', 'ANTI-HBCORE']) || buscarEnLineaResultado(['AC.ANTI-HBCORE', 'ANTI-HBCORE'], 'estado'),
+        hepatitis_c:                     buscarEstado(['HEPATITIS C', 'ANTI HCV', 'HCV', 'AC. ANTI-HCV', 'ANTI-HCV']) || buscarEnLineaResultado(['AC. ANTI-HCV', 'ANTI-HCV', 'ANTI HCV'], 'estado'),
+        vdrl:                            buscarEstado(['VDRL', 'USR', 'V.D.R.L']) || buscarEnLineaResultado(['V.D.R.L', 'VDRL'], 'estado'),
         chagas_hai:                      buscarEstado(['CHAGAS AC. - HAI', 'CHAGAS HAI', 'CHAGAS - HAI']),
-        chagas_eclia:                    buscarEstado(['CHAGAS AC. IGG', 'CHAGAS ECLIA', 'CHAGAS IGG', 'CHAGAS ANTICUERPOS']),
+        chagas_eclia:                    buscarEstado(['CHAGAS AC. IGG', 'CHAGAS ECLIA', 'CHAGAS IGG', 'CHAGAS ANTICUERPOS']) || buscarEnLineaResultado(['CHAGAS ANTICUERPOS', 'CHAGAS'], 'estado'),
         hpv_genotipo_16:                 buscarHPVPorPosicion(lineas, 0),
         hpv_genotipo_18:                 buscarHPVPorPosicion(lineas, 1),
         hpv_otros:                       buscarHPVPorPosicion(lineas, 2),
