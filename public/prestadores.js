@@ -634,32 +634,45 @@ function extraerDNIDelTexto(texto) {
 
 function extraerValoresLaboratorio(texto) {
     const lineas = texto.split('\n').map(l => l.trim()).filter(l => l);
-
-    function buscarValor(terminosClave, maxLineas = 6) {
-        for (let i = 0; i < lineas.length; i++) {
-            const lineaUpper = lineas[i].toUpperCase()
-                .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            const encontrado = terminosClave.some(t =>
-                lineaUpper.includes(t.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))
+function buscarValor(terminosClave, maxLineas = 6) {
+    for (let i = 0; i < lineas.length; i++) {
+        const lineaUpper = lineas[i].toUpperCase()
+            .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const encontrado = terminosClave.some(t =>
+            lineaUpper.includes(t.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))
+        );
+        if (encontrado) {
+            // Buscar en la misma línea
+            const matchMisma = lineas[i].match(
+                /(\d+[.,]?\d*\s*(?:mg\/d[lI]|g\/l|ml\/min|ng\/ml|%|mg\/l|u\/l))/i
             );
-            if (encontrado) {
-                const matchMisma = lineas[i].match(
+            if (matchMisma) return matchMisma[1].trim();
+
+            // Buscar en la línea ANTERIOR (formato Mega con columnas)
+            if (i > 0) {
+                const matchAnterior = lineas[i - 1].match(
+                    /^(\d+[.,]?\d*\s*(?:mg\/d[lI]|g\/l|ml\/min|ng\/ml|%|mg\/l|u\/l))$/i
+                );
+                if (matchAnterior) return matchAnterior[1].trim();
+            }
+
+            // Buscar en líneas siguientes saltando referencias
+            for (let j = i + 1; j < Math.min(i + maxLineas, lineas.length); j++) {
+                const lineaSigUpper = lineas[j].toUpperCase()
+                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                if (lineaSigUpper.includes('METODO:') ||
+                    lineaSigUpper.includes('REFERENCIA') ||
+                    lineaSigUpper.includes('DESEABLE') ||
+                    lineaSigUpper.includes('ELEVADO')) break;
+                const matchNum = lineas[j].match(
                     /(\d+[.,]?\d*\s*(?:mg\/d[lI]|g\/l|ml\/min|ng\/ml|%|mg\/l|u\/l))/i
                 );
-                if (matchMisma) return matchMisma[1].trim();
-                for (let j = i + 1; j < Math.min(i + maxLineas, lineas.length); j++) {
-                    const lineaSigUpper = lineas[j].toUpperCase()
-                        .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                    if (lineaSigUpper.includes('METODO:')) break;
-                    const matchNum = lineas[j].match(
-                        /(\d+[.,]?\d*\s*(?:mg\/d[lI]|g\/l|ml\/min|ng\/ml|%|mg\/l|u\/l))/i
-                    );
-                    if (matchNum) return matchNum[1].trim();
-                }
+                if (matchNum) return matchNum[1].trim();
             }
         }
-        return null;
     }
+    return null;
+}
 
     function buscarEstado(terminosClave, maxLineas = 3) {
         for (let i = 0; i < lineas.length; i++) {
