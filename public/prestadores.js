@@ -617,9 +617,9 @@ async function procesarTodosLosInformes() {
 
     mostrarValoresExtraidos({ dni, nombre: '', apellido: '', valores: valoresCombinados });
 }
-
 function extraerDNIDelTexto(texto) {
     const patrones = [
+        /Nro\.\s*Doc\.\s*:\s*DNI\s*(\d{7,8})/i,
         /DNI[:\s]+(\d{7,8})/i,
         /D\.N\.I[:\s]+(\d{7,8})/i,
         /DOCUMENTO[:\s]+(\d{7,8})/i,
@@ -685,69 +685,70 @@ function extraerValoresLaboratorio(texto) {
     }
 
     function buscarColesterolTotal() {
-    for (let i = 0; i < lineas.length; i++) {
-        const l = lineas[i].toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        if (l.includes('COLESTEROL') && !l.includes('HDL') &&
-            !l.includes('LDL') && !l.includes('REFERENCIA')) {
-            const m = lineas[i].match(/(\d+[.,]?\d*\s*mg\/d[lI])/i);
-            if (m) return m[1].trim();
-            for (let j = i + 1; j < Math.min(i + 8, lineas.length); j++) {
-                const lj = lineas[j].toUpperCase()
-                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                if (lj.includes('VALORES DE REFERENCIA') || lj.includes('DESEABLE') ||
-                    lj.includes('MODERADAMENTE') || lj.includes('METODO:')) continue;
-                if (lj.length > 40 && !lj.match(/^\d/) && !lj.includes('COLESTEROL')) break;
-                const mj = lineas[j].match(/(\d+[.,]?\d*\s*mg\/d[lI])/i);
-                if (mj) return mj[1].trim();
+        for (let i = 0; i < lineas.length; i++) {
+            const l = lineas[i].toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            if (l.includes('COLESTEROL') && !l.includes('HDL') &&
+                !l.includes('LDL') && !l.includes('REFERENCIA')) {
+                const m = lineas[i].match(/(\d+[.,]?\d*\s*mg\/d[lI])/i);
+                if (m) return m[1].trim();
+                for (let j = i + 1; j < Math.min(i + 8, lineas.length); j++) {
+                    const lj = lineas[j].toUpperCase()
+                        .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                    if (lj.includes('VALORES DE REFERENCIA') || lj.includes('DESEABLE') ||
+                        lj.includes('MODERADAMENTE') || lj.includes('METODO:')) continue;
+                    if (lj.length > 40 && !lj.match(/^\d/) && !lj.includes('COLESTEROL')) break;
+                    const mj = lineas[j].match(/(\d+[.,]?\d*\s*mg\/d[lI])/i);
+                    if (mj) return mj[1].trim();
+                }
             }
         }
+        return null;
     }
-    return null;
-}
 
-function buscarHDL() {
-    for (let i = 0; i < lineas.length; i++) {
-        const l = lineas[i].toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        if (l.includes('HDL') && l.includes('COLESTEROL')) {
-            const m = lineas[i].match(/(\d+[.,]?\d*\s*mg\/d[lI])/i);
-            if (m) return m[1].trim();
-            for (let j = i + 1; j < Math.min(i + 4, lineas.length); j++) {
-                const lj = lineas[j].toUpperCase()
-                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                if (lj.includes('LDL') || lj.includes('REFERENCIA')) break;
-                const mj = lineas[j].match(/^(\d+[.,]?\d*\s*mg\/d[lI])/i);
-                if (mj) return mj[1].trim();
+    function buscarHDL() {
+        for (let i = 0; i < lineas.length; i++) {
+            const l = lineas[i].toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            if (l.includes('HDL') && l.includes('COLESTEROL')) {
+                const m = lineas[i].match(/(\d+[.,]?\d*\s*mg\/d[lI])/i);
+                if (m) return m[1].trim();
+                for (let j = i + 1; j < Math.min(i + 4, lineas.length); j++) {
+                    const lj = lineas[j].toUpperCase()
+                        .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                    if (lj.includes('LDL') || lj.includes('REFERENCIA')) break;
+                    const mj = lineas[j].match(/^(\d+[.,]?\d*\s*mg\/d[lI])/i);
+                    if (mj) return mj[1].trim();
+                }
             }
         }
+        return null;
     }
-    return null;
-}
 
-function buscarLDL() {
-    for (let i = 0; i < lineas.length; i++) {
-        const l = lineas[i].toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        if (l.includes('LDL') && l.includes('COLESTEROL')) {
-            const m = lineas[i].match(/(\d+[.,]?\d*\s*mg\/d[lI])/i);
-            if (m) return m[1].trim();
-            for (let j = i + 1; j < Math.min(i + 4, lineas.length); j++) {
-                const lj = lineas[j].toUpperCase()
-                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                if (lj.includes('REFERENCIA')) break;
-                const mj = lineas[j].match(/^(\d+[.,]?\d*\s*mg\/d[lI])/i);
-                if (mj) return mj[1].trim();
+    function buscarLDL() {
+        for (let i = 0; i < lineas.length; i++) {
+            const l = lineas[i].toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            if (l.includes('LDL') && l.includes('COLESTEROL')) {
+                const m = lineas[i].match(/(\d+[.,]?\d*\s*mg\/d[lI])/i);
+                if (m) return m[1].trim();
+                for (let j = i + 1; j < Math.min(i + 4, lineas.length); j++) {
+                    const lj = lineas[j].toUpperCase()
+                        .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                    if (lj.includes('REFERENCIA')) break;
+                    const mj = lineas[j].match(/^(\d+[.,]?\d*\s*mg\/d[lI])/i);
+                    if (mj) return mj[1].trim();
+                }
             }
         }
+        return null;
     }
-    return null;
-}
 
     function buscarFiltradoGlomerular() {
         for (let i = 0; i < lineas.length; i++) {
             const l = lineas[i].toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            if (l.includes('FILTRADO GLOMERULAR') || l.includes('FILTRO GLOMERULAR')) {
+            if (l.includes('FILTRADO GLOMERULAR') || l.includes('FILTRO GLOMERULAR') || 
+                l.includes('FILTRACION GLOMERULAR') || l.includes('FILTRACIÓN GLOMERULAR')) {
                 for (let j = i; j < Math.min(i + 4, lineas.length); j++) {
-                    const m = lineas[j].match(/(\d+[.,]\d+\s*ml\/min)/i);
-                    if (m) return m[1].trim();
+                    const m = lineas[j].match(/(\d+[.,]\d+)\s*ml\/min/i);
+                    if (m) return m[1].trim() + ' ml/min';
                 }
             }
         }
@@ -775,46 +776,48 @@ function buscarLDL() {
     }
 
     function buscarHPVPorPosicion(lineas, posicion) {
-    // Primero intentar buscar en la misma línea
-    const terminos = ['HPV GENOTIPO 16', 'HPV GENOTIPO 18', 'HPV OTROS GENOTIPOS'];
-    const termino = terminos[posicion];
-    
-    for (let i = 0; i < lineas.length; i++) {
-        const l = lineas[i].toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        if (l.includes(termino.normalize("NFD").replace(/[\u0300-\u036f]/g, ""))) {
-            // Buscar en misma línea
-            const mMisma = lineas[i].match(/(NO DETECTABLE|DETECTABLE)/i);
-            if (mMisma) return mMisma[1].toUpperCase();
-            
-            // Buscar bloque: los 3 HPV juntos y resultados después
-            // Encontrar todos los resultados NO DETECTABLE/DETECTABLE que siguen
-            let resultados = [];
-            for (let j = i; j < Math.min(i + 10, lineas.length); j++) {
-                const m = lineas[j].match(/^(NO DETECTABLE|DETECTABLE)$/i);
-                if (m) resultados.push(m[1].toUpperCase());
-                if (resultados.length > posicion) return resultados[posicion];
+        const terminos = [
+            ['HPV GENOTIPO 16', 'HPV16', 'HPV 16'],
+            ['HPV GENOTIPO 18', 'HPV18', 'HPV 18'],
+            ['HPV OTROS GENOTIPOS', 'OTROS HPV DE ALTO RIESGO', 'OTROS HPV']
+        ];
+        const terminosBuscar = terminos[posicion];
+
+        for (let i = 0; i < lineas.length; i++) {
+            const l = lineas[i].toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const encontrado = terminosBuscar.some(t =>
+                l.includes(t.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))
+            );
+            if (encontrado) {
+                const mMisma = lineas[i].match(/(NO DETECTABLE|DETECTABLE)/i);
+                if (mMisma) return mMisma[1].toUpperCase();
+                let resultados = [];
+                for (let j = i; j < Math.min(i + 10, lineas.length); j++) {
+                    const m = lineas[j].match(/^(NO DETECTABLE|DETECTABLE)$/i);
+                    if (m) resultados.push(m[1].toUpperCase());
+                    if (resultados.length > posicion) return resultados[posicion];
+                }
             }
         }
+        return null;
     }
-    return null;
-}
 
     return {
-        glucemia:                        buscarValor(['GLUCOSA', 'GLUCEMIA', 'GLUCEMIA EN AYUNAS']),
+        glucemia:                        buscarValor(['GLUCOSA', 'GLUCEMIA', 'GLUCEMIA EN AYUNAS', 'GLICEMIA', 'GLICEMIA BASAL']),
         trigliceridos:                   buscarValor(['TRIGLICERIDOS', 'TRIGLICÉRIDOS']),
         colesterol_total:                buscarColesterolTotal(),
         colesterol_hdl:                  buscarHDL(),
         colesterol_ldl:                  buscarLDL(),
-        creatinina:                      buscarValor(['CREATININA']),
+        creatinina:                      buscarValor(['CREATININA', 'CREATININEMIA']),
         indice_filtrado_glomerular:      buscarFiltradoGlomerular(),
         psa:                             buscarValor(['PSA', 'PSA - AG', 'PROSTATICO', 'PROSTÁTICO', 'ANTIGENO PROSTATICO', 'ANTÍGENO PROSTÁTICO']),
-        hiv:                             buscarEstado(['HIV', 'VIH']),
-        hepatitis_b_antigeno_superficie: buscarEstado(['HBSAG', 'AG DE SUPERFICIE', 'HEPATITIS B - HBS']),
-        hepatitis_b_anti_core:           buscarEstado(['ANTI HBC', 'ANTI HBC (CORE)', 'AC. IGG ANTI HBC', 'HEPATITIS B - AC. IGG', 'HEPATITIS B - AC. IGG ANTI HBC', 'ANTI HBC (CORE)']),
-        hepatitis_c:                     buscarEstado(['HEPATITIS C', 'ANTI HCV', 'HCV']),
-        vdrl:                            buscarEstado(['VDRL', 'USR']),
+        hiv:                             buscarEstado(['HIV', 'VIH', 'HIV COMBO']),
+        hepatitis_b_antigeno_superficie: buscarEstado(['HBSAG', 'AG DE SUPERFICIE', 'HEPATITIS B - HBS', 'ANTIGENO SUP. HEPATITIS B', 'HBSAG']),
+        hepatitis_b_anti_core:           buscarEstado(['ANTI HBC', 'ANTI HBC (CORE)', 'AC. IGG ANTI HBC', 'HEPATITIS B - AC. IGG', 'AC.ANTI-HBCORE', 'ANTI-HBCORE']),
+        hepatitis_c:                     buscarEstado(['HEPATITIS C', 'ANTI HCV', 'HCV', 'AC. ANTI-HCV', 'ANTI-HCV']),
+        vdrl:                            buscarEstado(['VDRL', 'USR', 'V.D.R.L']),
         chagas_hai:                      buscarEstado(['CHAGAS AC. - HAI', 'CHAGAS HAI', 'CHAGAS - HAI']),
-        chagas_eclia:                    buscarEstado(['CHAGAS AC. IGG', 'CHAGAS ECLIA', 'CHAGAS IGG']),
+        chagas_eclia:                    buscarEstado(['CHAGAS AC. IGG', 'CHAGAS ECLIA', 'CHAGAS IGG', 'CHAGAS ANTICUERPOS']),
         hpv_genotipo_16:                 buscarHPVPorPosicion(lineas, 0),
         hpv_genotipo_18:                 buscarHPVPorPosicion(lineas, 1),
         hpv_otros:                       buscarHPVPorPosicion(lineas, 2),
