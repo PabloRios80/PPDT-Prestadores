@@ -3,6 +3,7 @@ const { createClient } = require('@supabase/supabase-js');
 const express = require('express');
 const axios = require('axios');
 const path = require('path');
+const { registrarEndpointLeerLaboratorio } = require('./endpoint_leer_laboratorio');
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -15,6 +16,7 @@ const supabase = createClient(
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
+registrarEndpointLeerLaboratorio(app);
 
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
 
@@ -476,6 +478,133 @@ app.post('/marcarFacturadas', async (req, res) => {
         res.json({ success: true, marcadas });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Error de conexión.' });
+    }
+});
+
+// ── GOOGLE DRIVE: LISTAR PDFs DE LABORATORIO ──
+const { google } = require('googleapis');
+function getDriveClient() {
+    const jsonStr = Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT_JSON_B64, 'base64').toString('utf-8');
+    const credentials = JSON.parse(jsonStr);
+    const auth = new google.auth.GoogleAuth({
+        credentials,
+        scopes: ['https://www.googleapis.com/auth/drive.readonly']
+    });
+    return google.drive({ version: 'v3', auth });
+}
+
+app.get('/listarPDFsLaboratorio', async (req, res) => {
+    try {
+        const drive = getDriveClient();
+
+        // Buscar la carpeta "laboratorio" por nombre
+        const carpetaRes = await drive.files.list({
+            q: `name = 'laboratorio' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+            fields: 'files(id, name)',
+            pageSize: 5
+        });
+
+        if (!carpetaRes.data.files.length) {
+            return res.json({ success: false, message: 'Carpeta laboratorio no encontrada.' });
+        }
+
+        const carpetaId = carpetaRes.data.files[0].id;
+
+        // Listar PDFs directamente en esa carpeta (Mega) y subcarpetas
+        const pdfRes = await drive.files.list({
+            q: `'${carpetaId}' in parents and mimeType = 'application/pdf' and trashed = false`,
+            fields: 'files(id, name, createdTime, modifiedTime)',
+            orderBy: 'modifiedTime desc',
+            pageSize: 50
+        });
+
+        // También listar subcarpetas para el Italiano
+        const subcarpetasRes = await drive.files.list({
+            q: `'${carpetaId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+            fields: 'files(id, name)',
+        });
+
+        let todosPDFs = pdfRes.data.files.map(f => ({ ...f, carpeta: 'laboratorio' }));
+
+        // PDFs dentro de subcarpetas
+        for (const sub of subcarpetasRes.data.files) {
+            if (sub.name.toLowerCase().includes('atem')) continue; // ignorar ATEM
+
+            const subPDFs = await drive.files.list({
+                q: `'${sub.id}' in parents and mimeType = 'application/pdf' and trashed = false`,
+                fields: 'files(id, name, createdTime, modifiedTime)',
+                orderBy: 'modifiedTime desc',
+                pageSize: 50
+            });
+            subPDFs.data.files.forEach(f => {
+                todosPDFs.push({ ...f, carpeta: sub.name });
+            });
+        }
+
+        res.json({ success: true, archivos: todosPDFs });
+
+    } catch (error) {
+        console.error('Error listando PDFs Drive:', error.message);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// ── GOOGLE DRIVE: DESCARGAR Y EXTRAER TEXTO DE UN PDF ──
+app.get('/procesarPDFDrive/:fileId', async (req, res) => {
+    try {
+        const drive = getDriveClient();
+        const pdfParse = require('pdf-parse').default || require('pdf-parse');
+
+        // Descargar el PDF como buffer
+        const response = await drive.files.get(
+            { fileId: req.params.fileId, alt: 'media' },
+            { responseType: 'arraybuffer' }
+        );
+
+        const buffer = Buffer.from(response.data);
+        console.log('Tamaño del buffer:', buffer.length, 'bytes');
+        console.log('Primeros bytes:', buffer.slice(0, 10).toString());
+        const pdfData = await pdfParse(buffer);
+
+        res.json({
+            success: true,
+            texto: pdfData.text,
+            paginas: pdfData.numpages
+        });
+
+    } catch (error) {
+        console.error('Error procesando PDF Drive:', error.message);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// ── EXTRAER TEXTO DE PDF SUBIDO ──
+app.post('/extraerTextoPDF', async (req, res) => {
+    try {
+        const { archivoBase64 } = req.body;
+        if (!archivoBase64) {
+            return res.json({ success: false, message: 'No se recibió ningún archivo.' });
+        }
+
+        const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+        const buffer = Buffer.from(archivoBase64, 'base64');
+        const data = new Uint8Array(buffer);
+
+        const pdf = await pdfjsLib.getDocument({ data }).promise;
+        let textoCompleto = '';
+
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            const textoPagina = content.items.map(item => item.str).join(' ');
+            textoCompleto += textoPagina + '\n';
+        }
+
+        res.json({ success: true, texto: textoCompleto, paginas: pdf.numPages });
+
+    } catch (error) {
+        console.error('Error extrayendo texto de PDF:', error.message);
+        res.status(500).json({ success: false, message: error.message });
     }
 });
 

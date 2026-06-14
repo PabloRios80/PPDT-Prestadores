@@ -160,16 +160,34 @@ async function buscarPracticas() {
                 realizadas.forEach(p => {
                     const div = document.createElement('div');
                     div.className = "bg-gray-50 p-4 rounded-lg border border-gray-200 border-l-4 border-l-green-500 flex justify-between items-center opacity-75";
-                    div.innerHTML = `
-                        <div>
-                            <p class="font-bold text-gray-600">${p.descripcion_practica}</p>
-                            <p class="text-xs text-gray-400">
-                                Cargada: ${p.fecha_carga ? new Date(p.fecha_carga).toLocaleDateString('es-AR') : 'S/F'}
-                            </p>
-                        </div>
-                        <span class="bg-green-100 text-green-700 px-3 py-1 rounded-full text-sm font-bold">
-                            ✓ REALIZADA
-                        </span>`;
+
+                    const infoTexto = document.createElement('div');
+                    infoTexto.innerHTML = `
+                        <p class="font-bold text-gray-600">${p.descripcion_practica}</p>
+                        <p class="text-xs text-gray-400">
+                            Cargada: ${p.fecha_carga ? new Date(p.fecha_carga).toLocaleDateString('es-AR') : 'S/F'}
+                        </p>`;
+                    div.appendChild(infoTexto);
+
+                    const derecha = document.createElement('div');
+                    derecha.className = "flex items-center gap-2";
+
+                    if (p.enlace_pdf) {
+                        const btnVer = document.createElement('a');
+                        btnVer.href = p.enlace_pdf;
+                        btnVer.target = '_blank';
+                        btnVer.rel = 'noopener noreferrer';
+                        btnVer.className = "bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-bold hover:bg-blue-200";
+                        btnVer.innerHTML = '<i class="fas fa-file-pdf mr-1"></i> Ver PDF';
+                        derecha.appendChild(btnVer);
+                    }
+
+                    const badge = document.createElement('span');
+                    badge.className = "bg-green-100 text-green-700 px-3 py-1 rounded-full text-sm font-bold";
+                    badge.innerHTML = '✓ REALIZADA';
+                    derecha.appendChild(badge);
+
+                    div.appendChild(derecha);
                     lista.appendChild(div);
                 });
             }
@@ -528,7 +546,7 @@ function evaluarSemaforo(campo, valor, datosAfiliado) {
 }
 
 // ==========================================
-// CARGA PDF LABORATORIO
+// CARGA PDF LABORATORIO - VERSIÓN CON IA (Claude)
 // ==========================================
 function modoCargaIndividual() {
     document.getElementById('modoCargaLab').classList.add('hidden');
@@ -552,520 +570,119 @@ function agregarInforme() {
     const contenedor = document.getElementById('contenedorInformes');
     const index = contenedor.children.length + 1;
     const div = document.createElement('div');
-    div.className = "relative border border-gray-200 rounded-lg p-2";
+    div.className = "relative border border-gray-200 rounded-lg p-3";
     div.innerHTML = `
-    <div class="flex justify-between items-center mb-1">
+    <div class="flex justify-between items-center mb-2">
         <label class="text-sm font-bold text-gray-600">
             <i class="fas fa-file-pdf text-red-500 mr-1"></i>Informe ${index}
         </label>
-        ${index > 1 ? `<button onclick="this.closest('div.relative').remove()" 
+        ${index > 1 ? `<button onclick="this.closest('div.relative').remove()"
             class="text-red-400 hover:text-red-600 text-xs">
             <i class="fas fa-times"></i> Quitar
         </button>` : ''}
     </div>
-    <textarea class="textoPDFItem w-full border border-gray-300 rounded-lg p-2 
-                    outline-none focus:ring-2 focus:ring-blue-500 text-xs font-mono" 
-            rows="4"
-            placeholder="Pegá aquí el texto copiado del PDF ${index}..."></textarea>`;
+    <input type="file" accept="application/pdf"
+           class="archivoPDFItem w-full border border-gray-300 rounded-lg p-2
+                  text-sm file:mr-3 file:py-1 file:px-3 file:rounded-md
+                  file:border-0 file:bg-blue-50 file:text-blue-700
+                  hover:file:bg-blue-100">
+    <p class="text-xs text-gray-400 mt-1">Subí el PDF del informe de laboratorio tal como te lo enviaron.</p>`;
     contenedor.appendChild(div);
 }
 
 async function procesarTodosLosInformes() {
-    const textareas = document.querySelectorAll('.textoPDFItem');
+    const inputs = document.querySelectorAll('.archivoPDFItem');
     const dni = document.getElementById('dniSearch').value.trim();
+    const resultadoDiv = document.getElementById('pdfResultado');
 
     if (!dni) return alert("Ingresá el DNI del paciente primero.");
 
-    const textos = Array.from(textareas)
-        .map(t => t.value.trim())
-        .filter(t => t.length > 0);
+    const archivos = Array.from(inputs)
+        .map(i => i.files && i.files[0])
+        .filter(f => f);
 
-    if (textos.length === 0) return alert("Pegá al menos un informe.");
+    if (archivos.length === 0) return alert("Seleccioná al menos un PDF.");
 
-    // Verificamos DNIs
-    const dnisDiferentes = [];
-    textos.forEach((texto, i) => {
-        const dniDetectado = extraerDNIDelTexto(texto);
-        if (dniDetectado && dniDetectado !== dni) {
-            dnisDiferentes.push({ informe: i + 1, dniDetectado });
+    // Mostrar estado de carga
+    resultadoDiv.classList.remove('hidden');
+    resultadoDiv.innerHTML = `
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+            <i class="fas fa-spinner fa-spin text-blue-600 text-2xl mb-2"></i>
+            <p class="text-blue-700">Leyendo informe${archivos.length > 1 ? 's' : ''} con IA, puede tardar unos segundos...</p>
+        </div>`;
+
+    try {
+        // Procesar cada PDF: convertir a base64 y enviar al backend
+        const resultados = [];
+        for (const archivo of archivos) {
+            const base64 = await toBase64(archivo);
+            const response = await fetch('/leerLaboratorioPDF', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ archivoBase64: base64 })
+            });
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.message || 'Error leyendo el PDF.');
+            }
+            resultados.push({ valores: data.valores, archivo, base64 });
         }
-    });
 
-    if (dnisDiferentes.length > 0) {
-        const mensajes = dnisDiferentes.map(d => `Informe ${d.informe}: DNI ${d.dniDetectado}`).join('\n');
-        const confirmar = confirm(
-            `⚠️ ATENCIÓN: Se detectaron informes con DNI diferente al paciente buscado (${dni}):\n\n` +
-            `${mensajes}\n\n¿Querés continuar igualmente cargando todo para el DNI ${dni}?`
-        );
-        if (!confirmar) return;
-    }
-
-    // Combinamos valores
-    let valoresCombinados = {};
-    textos.forEach(texto => {
-        const valores = extraerValoresLaboratorio(texto);
-        Object.entries(valores).forEach(([campo, valor]) => {
-            if (valor && !valoresCombinados[campo]) valoresCombinados[campo] = valor;
+        // Verificar DNI detectado vs DNI buscado
+        const dnisDiferentes = [];
+        resultados.forEach((r, i) => {
+            const dniDetectado = r.valores.dni_paciente;
+            if (dniDetectado && dniDetectado.replace(/\D/g, '') !== dni.replace(/\D/g, '')) {
+                dnisDiferentes.push({ informe: i + 1, dniDetectado });
+            }
         });
-    });
 
-    const valoresConDatos = Object.entries(valoresCombinados).filter(([k, v]) => v);
-    if (valoresConDatos.length === 0) {
-        alert("No se encontraron valores. Verificá que el texto esté completo.");
-        return;
+        if (dnisDiferentes.length > 0) {
+            const mensajes = dnisDiferentes.map(d => `Informe ${d.informe}: DNI ${d.dniDetectado}`).join('\n');
+            const confirmar = confirm(
+                `⚠️ ATENCIÓN: Se detectaron informes con DNI diferente al paciente buscado (${dni}):\n\n` +
+                `${mensajes}\n\n¿Querés continuar igualmente cargando todo para el DNI ${dni}?`
+            );
+            if (!confirmar) {
+                resultadoDiv.classList.add('hidden');
+                return;
+            }
+        }
+
+        // Combinar valores de todos los informes (primero encontrado gana)
+        let valoresCombinados = {};
+        resultados.forEach(r => {
+            Object.entries(r.valores).forEach(([campo, valor]) => {
+                if (campo === 'dni_paciente') return;
+                if (valor && !valoresCombinados[campo]) valoresCombinados[campo] = valor;
+            });
+        });
+
+        const valoresConDatos = Object.entries(valoresCombinados).filter(([k, v]) => v);
+        if (valoresConDatos.length === 0) {
+            resultadoDiv.innerHTML = `
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+                    <p class="text-yellow-700">No se encontraron valores en el/los informe(s). Verificá que sean los PDFs correctos.</p>
+                </div>`;
+            return;
+        }
+
+        // Guardar referencia a los PDFs originales (base64) para subirlos al confirmar
+        window._archivosPDFLab = resultados.map(r => ({
+            base64: r.base64,
+            nombre: r.archivo.name
+        }));
+
+        mostrarValoresExtraidos({ dni, nombre: '', apellido: '', valores: valoresCombinados });
+
+    } catch (e) {
+        resultadoDiv.innerHTML = `
+            <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+                <p class="text-red-600">Error: ${e.message}</p>
+            </div>`;
     }
-
-    mostrarValoresExtraidos({ dni, nombre: '', apellido: '', valores: valoresCombinados });
 }
-// ==========================================
-// EXTRACCIÓN DNI
-// ==========================================
-function extraerDNIDelTexto(texto) {
-    const patrones = [
-        /Nro\.\s*Doc\.\s*:\s*DNI\s*(\d{7,8})/i,
-        /DNI[:\s]+(\d{7,8})/i,
-        /D\.N\.I[:\s]+(\d{7,8})/i,
-        /DOCUMENTO[:\s]+(\d{7,8})/i,
-        /PACIENTE[:\s]+[A-ZÁÉÍÓÚ\s]+(\d{7,8})/i
-    ];
-    for (const patron of patrones) {
-        const match = texto.match(patron);
-        if (match) return match[1];
-    }
-    return null;
-}
 
-// ==========================================
-// DETECCIÓN DE LABORATORIO
-// ==========================================
-function detectarLaboratorio(texto) {
-    const t = texto.toUpperCase();
-    if (t.includes('HOSPITAL ITALIANO')) return 'italiano';
-    if (t.includes('MEGALABORATORIO') || t.includes('LABORATORIOMEGA')) return 'mega';
-    return 'generico';
-}
-
-// ==========================================
-// PARSER PRINCIPAL
-// ==========================================
-function extraerValoresLaboratorio(texto) {
-    const lineas = texto.split('\n').map(l => l.trim()).filter(l => l);
-    const lab = detectarLaboratorio(texto);
-
-    function norm(str) {
-        return (str || '').toUpperCase()
-            .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    }
-
-    const RE_NUM_UNIDAD = /(\d+[.,]?\d*)\s*(mg\/d[lI]|g\/l|ml\/min|ng\/ml|%|mg\/l|u\/l|UI\/l)/i;
-    const RE_NUM_SOLO   = /^(\d+[.,]?\d*)$/;
-    const RE_CUALIT     = /(NO DETECTABLE|DETECTABLE|NEGATIVO|POSITIVO|REACTIVO|NO REACTIVO)/i;
-
-    // ── BUSCADOR GENÉRICO NUMÉRICO ──
-    // La lógica de "línea anterior" solo aplica a Mega (columnas).
-    // En el Italiano, la línea anterior siempre es el Resultado del analito previo → bug.
-    function buscarValor(terminosClave, maxLineas = 6) {
-        for (let i = 0; i < lineas.length; i++) {
-            const lNorm = norm(lineas[i]);
-            if (!terminosClave.some(t => lNorm.includes(norm(t)))) continue;
-
-            // 1) Valor en la misma línea
-            const mMisma = lineas[i].match(RE_NUM_UNIDAD);
-            if (mMisma) return mMisma[0].trim();
-
-            // 2) Línea anterior — SOLO para Mega (columnas invertidas)
-            //    En Italiano la línea anterior es el Resultado del analito previo
-            if (lab === 'mega' && i > 0) {
-                const lineaAnt = norm(lineas[i - 1]);
-                // Solo si la línea anterior NO es un "Resultado" de otro analito
-                if (!lineaAnt.startsWith('RESULTADO') && !lineaAnt.includes('METODO')) {
-                    const mAnterior = lineas[i - 1].match(RE_NUM_SOLO);
-                    if (mAnterior) return mAnterior[1].trim();
-                    const mAnteriorU = lineas[i - 1].match(RE_NUM_UNIDAD);
-                    if (mAnteriorU) return mAnteriorU[0].trim();
-                }
-            }
-
-            // 3) Líneas siguientes (saltando referencias)
-            for (let j = i + 1; j < Math.min(i + maxLineas, lineas.length); j++) {
-                const ljNorm = norm(lineas[j]);
-                if (ljNorm.startsWith('METODO') ||
-                    ljNorm.includes('VALORES DE REFER') ||
-                    ljNorm.includes('REFERENCIA:') ||
-                    ljNorm.includes('DESEABLE') ||
-                    ljNorm.includes('ELEVADO') ||
-                    ljNorm.includes('MODERADAMENTE') ||
-                    ljNorm.includes('HASTA ') ||
-                    ljNorm.includes('DESDE ') ||
-                    ljNorm.includes('MAYOR A') ||
-                    ljNorm.includes('MENOR A') ||
-                    lineas[j].includes('<') ||
-                    lineas[j].includes('>')) continue;
-
-                const mSig = lineas[j].match(RE_NUM_UNIDAD);
-                if (mSig) return mSig[0].trim();
-
-                // Número solo en línea — solo Mega
-                if (lab === 'mega') {
-                    const mSolo = lineas[j].match(RE_NUM_SOLO);
-                    if (mSolo) return mSolo[1].trim();
-                }
-            }
-        }
-        return null;
-    }
-
-    // ── BUSCADOR GENÉRICO CUALITATIVO ──
-    function buscarEstado(terminosClave, maxLineas = 4) {
-        for (let i = 0; i < lineas.length; i++) {
-            const lNorm = norm(lineas[i]);
-            if (!terminosClave.some(t => lNorm.includes(norm(t)))) continue;
-
-            const mMisma = lineas[i].match(RE_CUALIT);
-            if (mMisma) return mMisma[1].toUpperCase();
-
-            for (let j = i + 1; j < Math.min(i + maxLineas, lineas.length); j++) {
-                const mSig = lineas[j].match(/^(NO DETECTABLE|DETECTABLE|NEGATIVO|POSITIVO|REACTIVO|NO REACTIVO)$/i);
-                if (mSig) return mSig[1].toUpperCase();
-            }
-        }
-        return null;
-    }
-
-    // ── HOSPITAL ITALIANO: "Resultado .... valor" ──
-    function buscarEnLineaResultado(terminosClave, tipo = 'numero') {
-        for (let i = 0; i < lineas.length; i++) {
-            const lNorm = norm(lineas[i]);
-            if (!terminosClave.some(t => lNorm.includes(norm(t)))) continue;
-
-            for (let j = i; j < Math.min(i + 6, lineas.length); j++) {
-                const ljNorm = norm(lineas[j]);
-                if (!ljNorm.startsWith('RESULTADO')) continue;
-                if (tipo === 'numero') {
-                    const m = lineas[j].match(RE_NUM_UNIDAD);
-                    if (m) return m[0].trim();
-                } else {
-                    const m = lineas[j].match(RE_CUALIT);
-                    if (m) return m[1].toUpperCase();
-                }
-            }
-        }
-        return null;
-    }
-
-    // ── FILTRADO GLOMERULAR ──
-    // Italiano: "Resultado... 109,00 ml/min/1,73 m2" — tiene unidad extendida
-    // Mega:     "122 ml/min" — entero simple
-    function buscarFiltradoGlomerular() {
-        for (let i = 0; i < lineas.length; i++) {
-            const lNorm = norm(lineas[i]);
-            if (!lNorm.includes('FILTRADO GLOMERULAR') &&
-                !lNorm.includes('FILTRACION GLOMERULAR') &&
-                !lNorm.includes('TASA ESTIMADA DE FILTRACION')) continue;
-
-            for (let j = i; j < Math.min(i + 5, lineas.length); j++) {
-                // Italiano: "109,00 ml/min/1,73 m2" — capturar antes del segundo "/"
-                const mItaliano = lineas[j].match(/(\d+[.,]\d+)\s*ml\/min/i);
-                if (mItaliano) return mItaliano[1].replace(',', '.') + ' ml/min';
-                // Mega: entero sin decimales (ej: 122 ml/min)
-                const mMega = lineas[j].match(/\b(\d+)\s*ml\/min/i);
-                if (mMega) return mMega[1] + ' ml/min';
-                // Número solo en línea (Mega)
-                if (lab === 'mega' && j > i) {
-                    const mSolo = lineas[j].match(RE_NUM_SOLO);
-                    if (mSolo) return mSolo[1] + ' ml/min';
-                }
-            }
-        }
-        return null;
-    }
-
-    // ── COLESTEROL TOTAL ──
-    function buscarColesterolTotal() {
-        for (let i = 0; i < lineas.length; i++) {
-            const lNorm = norm(lineas[i]);
-            if (!lNorm.includes('COLESTEROL')) continue;
-            if (lNorm.includes('HDL') || lNorm.includes('LDL') ||
-                lNorm.includes('REFERENCIA') || lNorm.includes('DESEABLE')) continue;
-
-            // Caso 1: valor en la misma línea
-            const mMisma = lineas[i].match(/(\d+[.,]?\d*)\s*mg\/d[lI]/i);
-            if (mMisma) return mMisma[0].trim();
-
-            // Caso 2: buscar en líneas siguientes
-            for (let j = i + 1; j < Math.min(i + 8, lineas.length); j++) {
-                const ljNorm = norm(lineas[j]);
-
-                // Mega: si llegamos al bloque HDL sin encontrar valor,
-                // el primer número de ese bloque es el colesterol total
-                if (lab === 'mega' && ljNorm.includes('HDL') && ljNorm.includes('COLESTEROL')) {
-                    for (let k = j + 1; k < Math.min(j + 8, lineas.length); k++) {
-                        const lkNorm = norm(lineas[k]);
-                        if (lkNorm.includes('LDL') || lkNorm.includes('RECOMENDABLE') ||
-                            lkNorm.includes('RIESGO')) break;
-                        if (lineas[k].includes('<') || lineas[k].includes('>')) continue;
-                        if (lkNorm.includes('VALORES DE REFERENCIA') ||
-                            lkNorm.includes('COLORIMETRICO')) continue;
-                        const mU = lineas[k].match(/(\d+[.,]?\d*)\s*mg\/d[lI]/i);
-                        if (mU) return mU[0].trim();
-                        const mSolo = lineas[k].match(RE_NUM_SOLO);
-                        if (mSolo) return mSolo[1].trim() + ' mg/dl';
-                    }
-                    break;
-                }
-
-                // Saltar líneas de referencia
-                if (ljNorm.includes('VALORES DE REFER') ||
-                    ljNorm.includes('DESEABLE') || ljNorm.includes('MODERADAMENTE') ||
-                    ljNorm.includes('ELEVADO') || ljNorm.includes('HASTA') ||
-                    lineas[j].includes('<') || lineas[j].includes('>')) continue;
-                if (ljNorm.length > 50 && !ljNorm.match(/^\d/)) break;
-
-                const mU = lineas[j].match(/(\d+[.,]?\d*)\s*mg\/d[lI]/i);
-                if (mU) return mU[0].trim();
-                if (lab === 'mega') {
-                    const mSolo = lineas[j].match(RE_NUM_SOLO);
-                    if (mSolo) return mSolo[1].trim() + ' mg/dl';
-                }
-            }
-        }
-        return null;
-    }
-
-    // ── HDL ──
-    function buscarHDL() {
-        for (let i = 0; i < lineas.length; i++) {
-            const lNorm = norm(lineas[i]);
-            if (!lNorm.includes('HDL') || !lNorm.includes('COLESTEROL')) continue;
-
-            // Valor en la misma línea (Italiano)
-            const mMisma = lineas[i].match(/(\d+[.,]?\d*)\s*mg\/d[lI]/i);
-            if (mMisma) return mMisma[0].trim();
-
-            // Colectar valores mg/dl en líneas siguientes
-            const valoresMgdl = [];
-            for (let j = i + 1; j < Math.min(i + 8, lineas.length); j++) {
-                const ljNorm = norm(lineas[j]);
-                if (ljNorm.includes('LDL') || ljNorm.includes('RECOMENDABLE') ||
-                    ljNorm.includes('RIESGO')) break;
-
-                // Saltar líneas de referencia
-                if (lineas[j].includes('<') || lineas[j].includes('>') ||
-                    ljNorm.includes('DESDE') || ljNorm.includes('HASTA')) continue;
-
-                const mU = lineas[j].match(/(\d+[.,]?\d*)\s*mg\/d[lI]/i);
-                if (mU) valoresMgdl.push(mU[0].trim());
-
-                if (lab === 'mega') {
-                    const mSolo = lineas[j].match(RE_NUM_SOLO);
-                    if (mSolo) valoresMgdl.push(mSolo[1].trim() + ' mg/dl');
-                }
-            }
-
-            // Mega: dos valores (colesterol total, HDL) → tomar el segundo
-            // Italiano: un solo valor → tomar el primero
-            if (lab === 'mega' && valoresMgdl.length >= 2) return valoresMgdl[1];
-            if (valoresMgdl.length >= 1) return valoresMgdl[0];
-        }
-        return null;
-    }
-
-    // ── LDL ──
-    function buscarLDL() {
-        for (let i = 0; i < lineas.length; i++) {
-            const lNorm = norm(lineas[i]);
-            if (!lNorm.includes('LDL') || !lNorm.includes('COLESTEROL')) continue;
-
-            const mMisma = lineas[i].match(/(\d+[.,]?\d*)\s*mg\/d[lI]/i);
-            if (mMisma) return mMisma[0].trim();
-
-            for (let j = i + 1; j < Math.min(i + 5, lineas.length); j++) {
-                const ljNorm = norm(lineas[j]);
-                if (ljNorm.includes('REFERENCIA') || ljNorm.includes('RIESGO') ||
-                    ljNorm.includes('DESEABLE') || ljNorm.includes('OPTIMO') ||
-                    lineas[j].includes('<') || lineas[j].includes('>')) continue;
-                const mU = lineas[j].match(/^(\d+[.,]?\d*)\s*mg\/d[lI]/i);
-                if (mU) return mU[0].trim();
-                if (lab === 'mega') {
-                    const mSolo = lineas[j].match(RE_NUM_SOLO);
-                    if (mSolo) return mSolo[1].trim() + ' mg/dl';
-                }
-            }
-        }
-        return null;
-    }
-
-    // ── SOMF ──
-    function buscarSOMF() {
-        const porEstado = buscarEstado(['SANGRE OCULTA', 'SOMF']);
-        if (porEstado) return porEstado;
-        return buscarEnLineaResultado(['SANGRE OCULTA EN MATERIA FECAL', 'SOMF'], 'estado');
-    }
-
-    // ── HPV ──
-    // Mega:     3 genotipos listados, resultados juntos después en orden
-    // Italiano: HPV16/HPV18/OTROS en la misma línea con el resultado
-    function buscarHPVBloque() {
-        let bloqueInicio = -1;
-        for (let i = 0; i < lineas.length; i++) {
-            const lNorm = norm(lineas[i]);
-            if (lNorm.includes('PAPILOMA VIRUS') ||
-                lNorm.includes('DETECCION Y TIPIFICACION DE HPV') ||
-                lNorm.includes('HPV GENOTIPO 16') ||
-                lNorm.includes('HPV16')) {
-                bloqueInicio = i;
-                break;
-            }
-        }
-        if (bloqueInicio === -1) return { g16: null, g18: null, otros: null };
-
-        const posG16 = [], posG18 = [], posOtros = [];
-        for (let i = bloqueInicio; i < Math.min(bloqueInicio + 25, lineas.length); i++) {
-            const lNorm = norm(lineas[i]);
-            // Términos para G16
-            if (lNorm.includes('HPV GENOTIPO 16') || lNorm === 'HPV GENOTIPO 16' ||
-                lNorm.startsWith('HPV16') || lNorm.startsWith('HPV 16')) posG16.push(i);
-            // Términos para G18
-            if (lNorm.includes('HPV GENOTIPO 18') || lNorm === 'HPV GENOTIPO 18' ||
-                lNorm.startsWith('HPV18') || lNorm.startsWith('HPV 18')) posG18.push(i);
-            // Términos para Otros
-            if (lNorm.includes('OTROS GENOTIPOS DE ALTO RIESGO') ||
-                lNorm.includes('OTROS HPV DE ALTO RIESGO') ||
-                lNorm.startsWith('OTROS HPV')) posOtros.push(i);
-        }
-
-        function valorEnOCercaDe(posiciones) {
-            for (const pos of posiciones) {
-                // Valor en la misma línea (Italiano: "HPV16 ...NO DETECTABLE")
-                const mMisma = lineas[pos].match(/(NO DETECTABLE|DETECTABLE)/i);
-                if (mMisma) return mMisma[1].toUpperCase();
-                // Líneas inmediatas siguientes
-                for (let j = pos + 1; j < Math.min(pos + 5, lineas.length); j++) {
-                    const ljNorm = norm(lineas[j]);
-                    if (ljNorm.startsWith('HPV') || ljNorm.includes('OTROS')) break;
-                    const m = lineas[j].match(/^(NO DETECTABLE|DETECTABLE)$/i);
-                    if (m) return m[1].toUpperCase();
-                }
-            }
-            return null;
-        }
-
-        const g16   = valorEnOCercaDe(posG16);
-        const g18   = valorEnOCercaDe(posG18);
-        const otros = valorEnOCercaDe(posOtros);
-
-        // Si no encontramos por nombre (Mega con resultados al final juntos)
-        if (!g16 || !g18 || !otros) {
-            const todasPos = [...posG16, ...posG18, ...posOtros].sort((a, b) => a - b);
-            if (todasPos.length === 0) return { g16, g18, otros };
-
-            const ultimaPos = todasPos[todasPos.length - 1];
-            const resultados = [];
-            for (let j = ultimaPos + 1; j < Math.min(ultimaPos + 10, lineas.length); j++) {
-                const m = lineas[j].match(/^(NO DETECTABLE|DETECTABLE)$/i);
-                if (m) resultados.push(m[1].toUpperCase());
-                if (resultados.length === 3) break;
-            }
-            return {
-                g16:   g16   || resultados[0] || null,
-                g18:   g18   || resultados[1] || null,
-                otros: otros || resultados[2] || null
-            };
-        }
-
-        return { g16, g18, otros };
-    }
-
-    // ── RESULTADO FINAL ──
-    const hpv = buscarHPVBloque();
-
-    return {
-        glucemia:
-            buscarValor(['GLUCOSA', 'GLUCEMIA', 'GLUCEMIA EN AYUNAS', 'GLICEMIA', 'GLICEMIA BASAL']) ||
-            buscarEnLineaResultado(['GLUCOSA', 'GLUCEMIA', 'GLICEMIA'], 'numero'),
-
-        trigliceridos:
-            buscarValor(['TRIGLICERIDOS']) ||
-            buscarEnLineaResultado(['TRIGLICERIDOS'], 'numero'),
-
-        colesterol_total:
-            buscarColesterolTotal() ||
-            buscarEnLineaResultado(['COLESTEROL TOTAL', '* COLESTEROL TOTAL'], 'numero'),
-
-        colesterol_hdl:
-            buscarHDL() ||
-            buscarEnLineaResultado(['COLESTEROL - HDL', 'HDL - COLESTEROL', 'HDL COLESTEROL'], 'numero'),
-
-        colesterol_ldl:
-            buscarLDL() ||
-            buscarEnLineaResultado(['COLESTEROL - LDL', 'LDL - COLESTEROL', 'LDL COLESTEROL'], 'numero'),
-
-        creatinina:
-            buscarValor(['CREATININA', 'CREATININEMIA']) ||
-            buscarEnLineaResultado(['CREATININA', 'CREATININEMIA'], 'numero'),
-
-        indice_filtrado_glomerular:
-            buscarFiltradoGlomerular(),
-
-        psa:
-            buscarValor(['PSA', 'PSA - AG', 'ANTIGENO PROSTATICO', 'ANTIGENO PROSTATICO ESPECIFICO']) ||
-            buscarEnLineaResultado(['PSA', 'ANTIGENO PROSTATICO'], 'numero'),
-
-        hiv:
-            buscarEstado(['HIV', 'VIH', 'HIV COMBO', 'HIV AC.']) ||
-            buscarEnLineaResultado(['HIV COMBO', 'HIV'], 'estado'),
-
-        hepatitis_b_antigeno_superficie:
-            buscarEstado(['HBSAG', 'AG DE SUPERFICIE', 'HEPATITIS B - HBS',
-                          'ANTIGENO SUP. HEPATITIS B', 'HEPATITIS B - HBSAG']) ||
-            buscarEnLineaResultado(['ANTIGENO SUP. HEPATITIS B', 'HBSAG'], 'estado'),
-
-        hepatitis_b_anti_core:
-            buscarEstado(['ANTI HBC', 'ANTI HBC (CORE)', 'AC. IGG ANTI HBC',
-                          'AC.ANTI-HBCORE', 'ANTI-HBCORE', 'HEPATITIS B - AC. IGG ANTI HBC']) ||
-            buscarEnLineaResultado(['AC.ANTI-HBCORE', 'ANTI-HBCORE'], 'estado'),
-
-        hepatitis_c:
-            buscarEstado(['HEPATITIS C', 'ANTI HCV', 'HCV', 'AC. ANTI HCV',
-                          'AC. ANTI-HCV', 'HEPATITIS C - AC. ANTI HCV']) ||
-            buscarEnLineaResultado(['AC. ANTI-HCV', 'ANTI HCV', 'ANTI-HCV'], 'estado'),
-
-        vdrl:
-            buscarEstado(['VDRL', 'USR', 'V.D.R.L']) ||
-            buscarEnLineaResultado(['V.D.R.L', 'VDRL'], 'estado'),
-
-        chagas_hai:
-            buscarEstado(['CHAGAS AC. - HAI', 'CHAGAS HAI', 'CHAGAS - HAI']),
-
-        chagas_eclia:
-            buscarEstado(['CHAGAS AC. IGG', 'CHAGAS ECLIA', 'CHAGAS IGG',
-                          'CHAGAS ANTICUERPOS', 'CHAGAS ANTICUERPOS ( ECLIA )']) ||
-            buscarEnLineaResultado(['CHAGAS ANTICUERPOS', 'CHAGAS'], 'estado'),
-
-        hpv_genotipo_16: hpv.g16,
-        hpv_genotipo_18: hpv.g18,
-        hpv_otros:       hpv.otros,
-
-        hemoglobina_glicosilada:
-            buscarValor(['HEMOGLOBINA GLICOSILADA', 'HBA1C', 'HB A1C']) ||
-            buscarEnLineaResultado(['HEMOGLOBINA GLICOSILADA', 'HBA1C'], 'numero'),
-
-        somf:
-            buscarSOMF(),
-
-        microalbuminuria:
-            buscarValor(['MICROALBUMINURIA', 'ALBUMINA ORINA', 'MICROALBUMINA']) ||
-            buscarEnLineaResultado(['MICROALBUMINURIA'], 'numero'),
-
-        proteinuria:
-            buscarValor(['PROTEINURIA', 'PROTEINAS EN ORINA']) ||
-            buscarEnLineaResultado(['PROTEINURIA'], 'numero'),
-
-        clearence_creatinina:
-            buscarValor(['CLEARENCE', 'DEPURACION DE CREATININA', 'CLEARANCE DE CREATININA']) ||
-            buscarEnLineaResultado(['CLEARANCE DE CREATININA', 'CLEARENCE'], 'numero')
-    };
-}
 // ==========================================
 // MOSTRAR VALORES CON SEMÁFORO
 // ==========================================
@@ -1247,7 +864,7 @@ async function confirmarCargaPDFLab(data, mapeo) {
         if (!valor) return;
         const descripcion = mapeo[campo];
         if (!descripcion) return;
-        practicasParaGuardar.push({ descripcion, valor });
+        practicasParaGuardar.push({ campo, descripcion, valor });
     });
 
     if (practicasParaGuardar.length === 0) {
@@ -1265,6 +882,8 @@ async function confirmarCargaPDFLab(data, mapeo) {
             body: JSON.stringify({
                 dni: dni,
                 practicas: practicasParaGuardar,
+                valoresCompletos: valores,
+                archivosPDF: window._archivosPDFLab || [],
                 idPrestador: prestadorActual.id,
                 nombrePrestador: prestadorActual.nombre
             })
