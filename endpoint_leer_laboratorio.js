@@ -149,6 +149,91 @@ function registrarEndpointLeerLaboratorio(app) {
             res.status(500).json({ success: false, message: error.message });
         }
     });
+
+    // ── ENDPOINT: Leer PDF de laboratorio desde un link de Google Drive ──
+    // POST /leerLaboratorioPDFDesdeLink
+    // Body: { link: "https://drive.google.com/file/d/XXXX/view?usp=sharing" }
+    // Devuelve: { success: true, valores: {...}, archivoBase64: "..." }
+    // (también devuelve archivoBase64 para poder subirlo a Storage después)
+    app.post('/leerLaboratorioPDFDesdeLink', async (req, res) => {
+        try {
+            const { link } = req.body;
+            if (!link) {
+                return res.json({ success: false, message: 'No se recibió ningún link.' });
+            }
+
+            const fileId = extraerIdDeDriveLink(link);
+            if (!fileId) {
+                return res.json({ success: false, message: 'No se pudo reconocer el link de Google Drive. Verificá que sea un link de "Compartir" válido.' });
+            }
+
+            const buffer = await descargarPDFDeDrive(fileId);
+            const valores = await leerValoresLaboratorioConClaude(buffer);
+
+            res.json({
+                success: true,
+                valores,
+                archivoBase64: buffer.toString('base64')
+            });
+
+        } catch (error) {
+            console.error('Error leyendo PDF desde link de Drive:', error.message);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    });
+}
+
+// Extrae el ID de archivo de distintos formatos de link de Google Drive:
+// - https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+// - https://drive.google.com/open?id=FILE_ID
+// - https://drive.google.com/uc?id=FILE_ID&export=download
+function extraerIdDeDriveLink(link) {
+    let match = link.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if (match) return match[1];
+
+    match = link.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (match) return match[1];
+
+    return null;
+}
+
+// Descarga un archivo público de Google Drive por su ID.
+// Maneja la página de confirmación que Drive muestra para archivos
+// que no puede "escanear" (común en PDFs).
+async function descargarPDFDeDrive(fileId) {
+    const axios = require('axios');
+    const urlBase = `https://drive.google.com/uc?export=download&id=${fileId}`;
+
+    let response = await axios.get(urlBase, {
+        responseType: 'arraybuffer',
+        maxRedirects: 5
+    });
+
+    // Si Drive devolvió HTML (página de confirmación) en lugar del PDF,
+    // buscamos el token de confirmación y reintentamos.
+    const contentType = response.headers['content-type'] || '';
+    if (contentType.includes('text/html')) {
+        const html = Buffer.from(response.data).toString('utf-8');
+
+        // Buscar el formulario de confirmación (uuid/confirm token)
+        const confirmMatch = html.match(/confirm=([0-9A-Za-z_-]+)/);
+        const uuidMatch = html.match(/name="uuid" value="([0-9A-Za-z_-]+)"/);
+
+        if (confirmMatch || uuidMatch) {
+            const confirm = confirmMatch ? confirmMatch[1] : '';
+            const uuid = uuidMatch ? `&uuid=${uuidMatch[1]}` : '';
+            const urlConfirm = `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=${confirm}${uuid}`;
+
+            response = await axios.get(urlConfirm, {
+                responseType: 'arraybuffer',
+                maxRedirects: 5
+            });
+        } else {
+            throw new Error('El archivo no pudo descargarse automáticamente. Verificá que el permiso sea "Cualquiera con el enlace".');
+        }
+    }
+
+    return Buffer.from(response.data);
 }
 
 module.exports = { registrarEndpointLeerLaboratorio, leerValoresLaboratorioConClaude };

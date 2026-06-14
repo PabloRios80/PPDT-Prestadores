@@ -4,6 +4,7 @@ const express = require('express');
 const axios = require('axios');
 const path = require('path');
 const { registrarEndpointLeerLaboratorio } = require('./endpoint_leer_laboratorio');
+const { registrarEndpointGuardarLaboratorio } = require('./endpoint_guardar_laboratorio');
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -17,6 +18,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 registrarEndpointLeerLaboratorio(app);
+registrarEndpointGuardarLaboratorio(app, supabase);
 
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
 
@@ -354,65 +356,6 @@ app.post('/savePracticeResult', async (req, res) => {
     }
 });
 
-// ── GUARDAR PRÁCTICAS DE LABORATORIO (CARGA PDF) ──
-app.post('/savePracticasLaboratorio', async (req, res) => {
-    try {
-        const { dni, practicas, idPrestador, nombrePrestador } = req.body;
-        console.log('Guardando prácticas de laboratorio para DNI:', dni);
-
-        // Backup Google Sheets (no bloqueante)
-        axios.post(APPS_SCRIPT_URL, {
-            action: 'guardarPracticasLaboratorio',
-            payload: req.body
-        }).catch(e => console.warn('Backup Google Sheets falló:', e.message));
-
-        // Deduplicar
-        const practicasDedup = {};
-        for (const p of practicas) {
-            const key = p.descripcion.toLowerCase().trim();
-            if (!practicasDedup[key]) {
-                practicasDedup[key] = p;
-            } else {
-                const vNuevo = (p.valor || '').toUpperCase();
-                if (vNuevo.includes('DETECTABLE') && !vNuevo.includes('NO DETECTABLE')) practicasDedup[key] = p;
-                if (vNuevo.includes('POSITIVO')) practicasDedup[key] = p;
-            }
-        }
-        const practicasUnicas = Object.values(practicasDedup);
-        console.log('Prácticas únicas a guardar:', practicasUnicas.length);
-
-        let guardadas = 0;
-        let noAutorizadas = 0;
-
-        for (const practica of practicasUnicas) {
-            const { data: existente } = await supabase
-                .from('practicas_autorizadas').select('id')
-                .eq('dni', dni)
-                .ilike('descripcion_practica', `%${practica.descripcion}%`)
-                .eq('estado', 'AUTORIZADA').single();
-
-            if (existente) {
-                await supabase.from('practicas_autorizadas')
-                    .update({
-                        estado: 'REALIZADA',
-                        resultado_texto: practica.valor,
-                        fecha_carga: new Date().toISOString(),
-                        id_prestador: idPrestador?.toString(),
-                        nombre_prestador: nombrePrestador
-                    }).eq('id', existente.id);
-                guardadas++;
-            } else {
-                noAutorizadas++;
-            }
-        }
-
-        res.json({ success: true, guardadas, noAutorizadas, message: `${guardadas} prácticas guardadas.` });
-
-    } catch (error) {
-        console.error('Error en /savePracticasLaboratorio:', error.message);
-        res.status(500).json({ success: false, message: 'Error de conexión.' });
-    }
-});
 
 // ── DATOS AFILIADO PARA SEMÁFORO ──
 app.get('/getDatosAfiliado/:dni', async (req, res) => {
