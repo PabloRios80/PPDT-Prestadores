@@ -586,46 +586,86 @@ function agregarInforme() {
                   text-sm file:mr-3 file:py-1 file:px-3 file:rounded-md
                   file:border-0 file:bg-blue-50 file:text-blue-700
                   hover:file:bg-blue-100">
-    <p class="text-xs text-gray-400 mt-1">Subí el PDF del informe de laboratorio tal como te lo enviaron.</p>`;
+    <div class="flex items-center gap-2 my-2">
+        <div class="flex-grow border-t border-gray-200"></div>
+        <span class="text-xs text-gray-400 font-bold">O</span>
+        <div class="flex-grow border-t border-gray-200"></div>
+    </div>
+    <input type="text"
+           class="linkDriveItem w-full border border-gray-300 rounded-lg p-2 text-sm
+                  outline-none focus:ring-2 focus:ring-blue-500"
+           placeholder="Pegá el link de Google Drive del PDF (debe estar compartido como 'Cualquiera con el enlace')">
+    <p class="text-xs text-gray-400 mt-1">Subí el PDF, o pegá el link de Drive si el informe ya está guardado ahí.</p>`;
     contenedor.appendChild(div);
 }
 
 async function procesarTodosLosInformes() {
-    const inputs = document.querySelectorAll('.archivoPDFItem');
+    const bloquesInforme = document.querySelectorAll('#contenedorInformes > div');
     const dni = document.getElementById('dniSearch').value.trim();
     const resultadoDiv = document.getElementById('pdfResultado');
 
     if (!dni) return alert("Ingresá el DNI del paciente primero.");
 
-    const archivos = Array.from(inputs)
-        .map(i => i.files && i.files[0])
-        .filter(f => f);
+    // Recolectar las entradas: cada informe puede tener archivo O link, no ambos
+    const entradas = [];
+    bloquesInforme.forEach(bloque => {
+        const inputArchivo = bloque.querySelector('.archivoPDFItem');
+        const inputLink = bloque.querySelector('.linkDriveItem');
 
-    if (archivos.length === 0) return alert("Seleccioná al menos un PDF.");
+        const archivo = inputArchivo && inputArchivo.files && inputArchivo.files[0];
+        const link = inputLink && inputLink.value.trim();
+
+        if (archivo) {
+            entradas.push({ tipo: 'archivo', archivo });
+        } else if (link) {
+            entradas.push({ tipo: 'link', link });
+        }
+    });
+
+    if (entradas.length === 0) return alert("Subí al menos un PDF o pegá un link de Drive.");
 
     // Mostrar estado de carga
     resultadoDiv.classList.remove('hidden');
     resultadoDiv.innerHTML = `
         <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
             <i class="fas fa-spinner fa-spin text-blue-600 text-2xl mb-2"></i>
-            <p class="text-blue-700">Leyendo informe${archivos.length > 1 ? 's' : ''} con IA, puede tardar unos segundos...</p>
+            <p class="text-blue-700">Leyendo informe${entradas.length > 1 ? 's' : ''} con IA, puede tardar unos segundos...</p>
         </div>`;
 
     try {
-        // Procesar cada PDF: convertir a base64 y enviar al backend
         const resultados = [];
-        for (const archivo of archivos) {
-            const base64 = await toBase64(archivo);
-            const response = await fetch('/leerLaboratorioPDF', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ archivoBase64: base64 })
-            });
-            const data = await response.json();
-            if (!data.success) {
-                throw new Error(data.message || 'Error leyendo el PDF.');
+        for (const entrada of entradas) {
+            let data;
+
+            if (entrada.tipo === 'archivo') {
+                const base64 = await toBase64(entrada.archivo);
+                const response = await fetch('/leerLaboratorioPDF', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ archivoBase64: base64 })
+                });
+                data = await response.json();
+                if (!data.success) throw new Error(data.message || 'Error leyendo el PDF.');
+                resultados.push({
+                    valores: data.valores,
+                    base64,
+                    nombre: entrada.archivo.name
+                });
+
+            } else {
+                const response = await fetch('/leerLaboratorioPDFDesdeLink', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ link: entrada.link })
+                });
+                data = await response.json();
+                if (!data.success) throw new Error(data.message || 'Error leyendo el PDF desde el link.');
+                resultados.push({
+                    valores: data.valores,
+                    base64: data.archivoBase64,
+                    nombre: 'informe_drive.pdf'
+                });
             }
-            resultados.push({ valores: data.valores, archivo, base64 });
         }
 
         // Verificar DNI detectado vs DNI buscado
@@ -670,7 +710,7 @@ async function procesarTodosLosInformes() {
         // Guardar referencia a los PDFs originales (base64) para subirlos al confirmar
         window._archivosPDFLab = resultados.map(r => ({
             base64: r.base64,
-            nombre: r.archivo.name
+            nombre: r.nombre
         }));
 
         mostrarValoresExtraidos({ dni, nombre: '', apellido: '', valores: valoresCombinados });
