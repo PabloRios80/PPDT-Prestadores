@@ -193,7 +193,35 @@ async function buscarPracticas() {
             }
 
         } else {
-            // No hay prácticas — generarlas automáticamente
+            // No hay prácticas autorizadas
+            loading.classList.add('hidden');
+
+            // ── CASO ESPECIAL: BIOPSIAS ──
+            // La biopsia no se autoriza de antemano (no es una práctica
+            // preventiva programada): surge como indicación durante otro
+            // estudio (VCC, Papanicolau, etc.). El anatomopatólogo debe
+            // poder cargar el informe igual, sin esperar autorización previa.
+            if (prestadorActual.especialidad === 'Biopsias') {
+                lista.innerHTML = '';
+                const div = document.createElement('div');
+                div.className = "bg-white p-4 rounded-lg shadow border-l-4 border-purple-600 flex justify-between items-center";
+                div.innerHTML = `
+                    <div>
+                        <p class="font-bold text-gray-800">Informe de Biopsia / Anatomía Patológica</p>
+                        <p class="text-xs text-gray-400">No requiere autorización previa — cargá el resultado directamente.</p>
+                    </div>`;
+                const btn = document.createElement('button');
+                btn.className = "bg-purple-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-purple-700";
+                btn.textContent = "CARGAR BIOPSIA";
+                btn.addEventListener('click', function () {
+                    abrirModal(null, 'Biopsia');
+                });
+                div.appendChild(btn);
+                lista.appendChild(div);
+                return;
+            }
+
+            // Resto de especialidades: intentar generar el plan preventivo
             loading.classList.remove('hidden');
             lista.innerHTML = '';
             try {
