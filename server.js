@@ -106,18 +106,20 @@ app.post('/loginPrestador', async (req, res) => {
 // ── OBTENER PRÁCTICAS POR ESPECIALIDAD ──
 app.get('/getPracticasPrestador/:dni/:especialidad', async (req, res) => {
     const { dni, especialidad } = req.params;
-
     const PRACTICAS_POR_ESPECIALIDAD = {
         'Laboratorio Bioquimico': [
             'glucemia', 'colesterol', 'creatinina', 'filtrado', 'trigliceridos',
             'anti_VIH', 'hepatitis', 'chagas', 'VDRL', 'PSA', 'HPV',
             'hemoglobina', 'microalbuminuria', 'proteinuria', 'clearence', 'SOMF'
         ],
-        'Diagnostico por Imagenes': ['mamografia', 'ecografia', 'densitometria', 'aorta'],
-        'Gastroenterologia': ['colonoscopia', 'VCC'],
-        'Medicina': ['TA', 'IMC', 'espirometria', 'PAP', 'HPV', 'consejeria', 'vision'],
-        'Odontologia': ['odontologico', 'dental'],
-        'Prestador PPDT': ['vacunas']
+        'Diagnostico por Imagenes': ['mamografia', 'ecografia', 'aorta'],
+        'Densitometria':            ['densitometria', 'osea'],
+        'Gastroenterologia':        ['colonoscopia', 'VCC'],
+        'Biopsias':                 ['biopsia'],
+        'Papanicolau':              ['papanicolau', 'pap'],
+        'Oftalmologia':             ['vision', 'visual', 'oftalm'],
+        'Odontologia':              ['odontologico', 'dental'],
+        'Prestador PPDT':           ['vacunas']
     };
 
     try {

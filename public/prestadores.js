@@ -964,10 +964,10 @@ function mapearEspecialidad(rol) {
         'laboratorio':   'Laboratorio Bioquimico',
         'imagenes':      'Diagnostico por Imagenes',
         'gastro':        'Gastroenterologia',
-        'densitometria': 'Diagnostico por Imagenes',
-        'biopsias':      'Laboratorio Bioquimico',
-        'papanicolau':   'Laboratorio Bioquimico',
-        'oftalmologia':  'Medicina'
+        'densitometria': 'Densitometria',
+        'biopsias':      'Biopsias',
+        'papanicolau':   'Papanicolau',
+        'oftalmologia':  'Oftalmologia'
     };
     return MAPA[rol] || 'Medicina';
 }
