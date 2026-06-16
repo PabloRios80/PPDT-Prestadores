@@ -995,7 +995,8 @@ function mapearEspecialidad(rol) {
         'densitometria': 'Densitometria',
         'biopsias':      'Biopsias',
         'papanicolau':   'Papanicolau',
-        'oftalmologia':  'Oftalmologia'
+        'oftalmologia':  'Oftalmologia',
+        'espirometria':  'Espirometria'
     };
     return MAPA[rol] || 'Medicina';
 }

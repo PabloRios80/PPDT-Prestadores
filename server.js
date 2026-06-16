@@ -119,6 +119,7 @@ app.get('/getPracticasPrestador/:dni/:especialidad', async (req, res) => {
         'Papanicolau':              ['papanicolau', 'pap'],
         'Oftalmologia':             ['vision', 'visual', 'oftalm'],
         'Odontologia':              ['odontologico', 'dental'],
+        'Espirometria':             ['espirometria'],
         'Prestador PPDT':           ['vacunas']
     };
 
