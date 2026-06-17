@@ -28,6 +28,7 @@
           }
           window.dpProfesional = payload.nombre;
           window.dpRol = payload.profesion;
+          window.dpEsPreventivista = payload.profesion === "preventivista";
         } catch (e) {
           window.location.href = "https://acceso.diapreventivoiapos.com";
         }
@@ -73,6 +74,138 @@
         </div>
       </div>
     </header>
+    <!-- ════════════════════════════════════════════ -->
+    <!-- SELECTOR PREVENTIVISTA (pegar en prestadores.html, -->
+    <!-- justo antes de <!-- PANTALLA DE LOGIN -->
+    o después del header) -->
+    <!-- ════════════════════════════════════════════ -->
+    <div
+      id="selectorPreventivista"
+      class="hidden flex-grow flex items-center justify-center py-10"
+    >
+      <div style="max-width: 480px; width: 100%; padding: 0 16px">
+        <div class="bg-white rounded-xl shadow-lg p-8 border border-blue-100">
+          <h2 class="text-lg font-bold text-blue-800 mb-6 flex items-center">
+            <i class="fas fa-user-shield mr-2 text-blue-400"></i> Ingresar como
+            prestador
+          </h2>
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1"
+              >Especialidad</label
+            >
+            <select
+              id="selectEspecialidadPrev"
+              onchange="actualizarPrestadoresPrev()"
+              class="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            >
+              <option value="">Seleccioná especialidad</option>
+              <option value="Laboratorio Bioquimico">
+                Laboratorio Bioquímico
+              </option>
+              <option value="Diagnostico por Imagenes">
+                Diagnóstico por Imágenes
+              </option>
+              <option value="Gastroenterologia">Gastroenterología</option>
+              <option value="Densitometria">Densitometría</option>
+              <option value="Biopsias">Biopsias</option>
+              <option value="Papanicolau">Papanicolau</option>
+              <option value="Oftalmologia">Oftalmología</option>
+              <option value="Espirometria">Espirometría</option>
+              <option value="Odontologia">Odontología</option>
+            </select>
+          </div>
+          <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-1"
+              >Prestador (a cargo de la facturación)</label
+            >
+            <select
+              id="selectPrestadorPrev"
+              class="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            >
+              <option value="">Elegí especialidad primero</option>
+            </select>
+          </div>
+          <button
+            onclick="ingresarComoPrestadorPrev()"
+            class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold transition text-sm"
+          >
+            <i class="fas fa-sign-in-alt mr-2"></i> Ingresar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Mapa fijo: especialidad -> lista de {id, nombre, tipo}
+      // tipo 'simple' = tabla prestadores | tipo 'inst' = prestadores_institucionales
+      // Editar manualmente cuando se agregue un prestador nuevo.
+      const PRESTADORES_POR_ESPECIALIDAD_PREV = {
+        "Laboratorio Bioquimico": [
+          { id: 8, nombre: "Laboratorio Prueba", tipo: "simple" },
+          { id: 13, nombre: "free", tipo: "inst" },
+        ],
+        "Diagnostico por Imagenes": [
+          { id: 1, nombre: "Diagnostico por Imagenes Prueba", tipo: "simple" },
+          { id: 14, nombre: "dyma", tipo: "inst" },
+        ],
+        Gastroenterologia: [
+          { id: 2, nombre: "Gastroenterologia Prueba", tipo: "simple" },
+          { id: 12, nombre: "ppp", tipo: "inst" },
+        ],
+        Densitometria: [{ id: 15, nombre: "osses", tipo: "inst" }],
+        Biopsias: [{ id: 16, nombre: "biposi", tipo: "inst" }],
+        Papanicolau: [{ id: 18, nombre: "papa", tipo: "inst" }],
+        Oftalmologia: [],
+        Espirometria: [{ id: 19, nombre: "metri", tipo: "inst" }],
+        Odontologia: [{ id: 10, nombre: "Odontologia Prueba", tipo: "simple" }],
+      };
+
+      function actualizarPrestadoresPrev() {
+        const esp = document.getElementById("selectEspecialidadPrev").value;
+        const select = document.getElementById("selectPrestadorPrev");
+        select.innerHTML = '<option value="">Seleccioná prestador</option>';
+
+        const lista = PRESTADORES_POR_ESPECIALIDAD_PREV[esp] || [];
+        if (lista.length === 0) {
+          select.innerHTML =
+            '<option value="">Sin prestadores cargados para esta especialidad</option>';
+          return;
+        }
+        lista.forEach((p) => {
+          const opt = document.createElement("option");
+          opt.value = p.tipo + "_" + p.id;
+          opt.textContent = p.nombre;
+          select.appendChild(opt);
+        });
+      }
+
+      function ingresarComoPrestadorPrev() {
+        const esp = document.getElementById("selectEspecialidadPrev").value;
+        const prestVal = document.getElementById("selectPrestadorPrev").value;
+        if (!esp || !prestVal)
+          return alert("Seleccioná especialidad y prestador.");
+
+        const [tipo, id] = prestVal.split("_");
+        const lista = PRESTADORES_POR_ESPECIALIDAD_PREV[esp] || [];
+        const prest = lista.find(
+          (p) => p.tipo === tipo && p.id.toString() === id,
+        );
+        if (!prest) return alert("Prestador no encontrado.");
+
+        prestadorActual = {
+          id: prest.id,
+          nombre: prest.nombre,
+          especialidad: esp,
+        };
+        sessionStorage.setItem("prestador", JSON.stringify(prestadorActual));
+        sessionStorage.setItem("modoPreventivista", "true");
+
+        document
+          .getElementById("selectorPreventivista")
+          .classList.add("hidden");
+        mostrarPortal();
+      }
+    </script>
 
     <!-- PANTALLA DE LOGIN -->
     <div

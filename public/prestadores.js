@@ -1033,12 +1033,16 @@ const toBase64 = file => new Promise((resolve, reject) => {
     reader.onerror = error => reject(error);
 });
 document.addEventListener('DOMContentLoaded', () => {
-    prestadorActual = {
-        nombre: window.dpProfesional,
-        especialidad: mapearEspecialidad(window.dpRol),
-        id: window.dpRol
-    };
-    mostrarPortal();
+    if (window.dpEsPreventivista) {
+        document.getElementById('selectorPreventivista').classList.remove('hidden');
+    } else {
+        prestadorActual = {
+            nombre: window.dpProfesional,
+            especialidad: mapearEspecialidad(window.dpRol),
+            id: window.dpRol
+        };
+        mostrarPortal();
+    }
 
     document.getElementById('btnGuardarPractica').addEventListener('click', guardarPractica);
     document.getElementById('dniSearch')?.addEventListener('keypress', e => {
