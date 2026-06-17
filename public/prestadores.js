@@ -264,6 +264,8 @@ function abrirModal(codigo, descripcion) {
     document.getElementById('modalTitulo').textContent = descripcion;
     document.getElementById('resultadoValor').value = '';
     document.getElementById('archivoPdf').value = '';
+    const linkInput = document.getElementById('linkDrivePractica');
+    if (linkInput) linkInput.value = '';
     document.getElementById('modalCarga').classList.remove('hidden');
 }
 
@@ -271,11 +273,14 @@ function cerrarModal() {
     document.getElementById('modalCarga').classList.add('hidden');
     document.getElementById('resultadoValor').value = '';
     document.getElementById('archivoPdf').value = '';
+    const linkInput = document.getElementById('linkDrivePractica');
+    if (linkInput) linkInput.value = '';
 }
 
 async function guardarPractica() {
     const valor = document.getElementById('resultadoValor').value.trim();
     const inputArchivo = document.getElementById('archivoPdf');
+    const linkDrive = document.getElementById('linkDrivePractica')?.value.trim();
     const dni = document.getElementById('dniSearch').value.trim();
 
     if (!valor) return alert("Ingrese el resultado.");
@@ -286,6 +291,23 @@ async function guardarPractica() {
             archivoBase64 = await toBase64(inputArchivo.files[0]);
         } catch (e) {
             alert("Error al procesar el PDF.");
+            return;
+        }
+    } else if (linkDrive) {
+        try {
+            const resp = await fetch('/descargarPDFDesdeLink', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ link: linkDrive })
+            });
+            const data = await resp.json();
+            if (!data.success) {
+                alert("Error al descargar el PDF del link: " + data.message);
+                return;
+            }
+            archivoBase64 = data.archivoBase64;
+        } catch (e) {
+            alert("Error al descargar el PDF del link.");
             return;
         }
     }

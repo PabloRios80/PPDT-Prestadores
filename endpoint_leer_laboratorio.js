@@ -236,4 +236,4 @@ async function descargarPDFDeDrive(fileId) {
     return Buffer.from(response.data);
 }
 
-module.exports = { registrarEndpointLeerLaboratorio, leerValoresLaboratorioConClaude };
+module.exports = { registrarEndpointLeerLaboratorio, leerValoresLaboratorioConClaude, extraerIdDeDriveLink, descargarPDFDeDrive };

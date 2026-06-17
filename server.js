@@ -3,12 +3,12 @@ const { createClient } = require('@supabase/supabase-js');
 const express = require('express');
 const axios = require('axios');
 const path = require('path');
-const { registrarEndpointLeerLaboratorio } = require('./endpoint_leer_laboratorio');
+const { registrarEndpointLeerLaboratorio, leerValoresLaboratorioConClaude, extraerIdDeDriveLink, descargarPDFDeDrive } = require('./endpoint_leer_laboratorio');
 const { registrarEndpointGuardarLaboratorio } = require('./endpoint_guardar_laboratorio');
+const { registrarEndpointDescargarPDFGenerico } = require('./endpoint_descargar_pdf_generico');
 
 const app = express();
 const PORT = process.env.PORT || 3002;
-
 const supabase = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_KEY
@@ -19,6 +19,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 registrarEndpointLeerLaboratorio(app);
 registrarEndpointGuardarLaboratorio(app, supabase);
+registrarEndpointDescargarPDFGenerico(app, extraerIdDeDriveLink, descargarPDFDeDrive);
 
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
 
