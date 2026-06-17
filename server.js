@@ -112,7 +112,7 @@ app.get('/getPracticasPrestador/:dni/:especialidad', async (req, res) => {
             'anti_VIH', 'hepatitis', 'chagas', 'VDRL', 'PSA', 'HPV',
             'hemoglobina', 'microalbuminuria', 'proteinuria', 'clearence', 'SOMF'
         ],
-        'Diagnostico por Imagenes': ['mamografia', 'ecografia', 'aorta'],
+        'Diagnostico por Imagenes': ['mamografia', 'ecografia', 'abdominal'],
         'Densitometria':            ['densitometria', 'osea'],
         'Gastroenterologia':        ['colonoscopia', 'VCC'],
         'Biopsias':                 ['biopsia'],
