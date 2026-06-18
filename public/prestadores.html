@@ -17,20 +17,23 @@
         const params = new URLSearchParams(window.location.search);
         const token = params.get("token");
         if (!token) {
-          window.location.href = "https://acceso.diapreventivoiapos.com";
+          window.location.href =
+            "https://acceso.diapreventivoiapos.com/login.html?redirect=prestadores";
           return;
         }
         try {
           const payload = JSON.parse(atob(token.split(".")[1]));
           if (Date.now() >= payload.exp * 1000) {
-            window.location.href = "https://acceso.diapreventivoiapos.com";
+            window.location.href =
+              "https://acceso.diapreventivoiapos.com/login.html?redirect=prestadores";
             return;
           }
           window.dpProfesional = payload.nombre;
           window.dpRol = payload.profesion;
           window.dpEsPreventivista = payload.profesion === "preventivista";
         } catch (e) {
-          window.location.href = "https://acceso.diapreventivoiapos.com";
+          window.location.href =
+            "https://acceso.diapreventivoiapos.com/login.html?redirect=prestadores";
         }
       })();
     </script>
@@ -75,7 +78,7 @@
       </div>
     </header>
     <!-- ════════════════════════════════════════════ -->
-    
+
     <div
       id="selectorPreventivista"
       class="hidden flex-grow flex items-center justify-center py-10"
