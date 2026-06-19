@@ -139,28 +139,19 @@
     </div>
 
     <script>
-      // Mapa fijo: especialidad -> lista de {id, nombre, tipo}
-      // tipo 'simple' = tabla prestadores | tipo 'inst' = prestadores_institucionales
-      // Editar manualmente cuando se agregue un prestador nuevo.
       const PRESTADORES_POR_ESPECIALIDAD_PREV = {
-        "Laboratorio Bioquimico": [
-          { id: 8, nombre: "Laboratorio Prueba", tipo: "simple" },
-          { id: 13, nombre: "free", tipo: "inst" },
-        ],
+        "Laboratorio Bioquimico": [{ id: 15, nombre: "MEGA", tipo: "simple" }],
         "Diagnostico por Imagenes": [
-          { id: 1, nombre: "Diagnostico por Imagenes Prueba", tipo: "simple" },
-          { id: 14, nombre: "dyma", tipo: "inst" },
+          { id: 16, nombre: "CIMBI", tipo: "simple" },
+          { id: 17, nombre: "Diagnostico por Imagenes S.A.", tipo: "simple" },
         ],
-        Gastroenterologia: [
-          { id: 2, nombre: "Gastroenterologia Prueba", tipo: "simple" },
-          { id: 12, nombre: "ppp", tipo: "inst" },
-        ],
-        Densitometria: [{ id: 15, nombre: "osses", tipo: "inst" }],
-        Biopsias: [{ id: 16, nombre: "biposi", tipo: "inst" }],
-        Papanicolau: [{ id: 18, nombre: "papa", tipo: "inst" }],
+        Gastroenterologia: [{ id: 20, nombre: "VESALIO", tipo: "inst" }],
+        Densitometria: [],
+        Biopsias: [],
+        Papanicolau: [],
         Oftalmologia: [],
-        Espirometria: [{ id: 19, nombre: "metri", tipo: "inst" }],
-        Odontologia: [{ id: 10, nombre: "Odontologia Prueba", tipo: "simple" }],
+        Espirometria: [],
+        Odontologia: [],
       };
 
       function actualizarPrestadoresPrev() {
