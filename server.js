@@ -315,9 +315,6 @@ function buscarUltimaRealizacion(practica, practicasHistoricas, historial) {
     return null;
 }
 // ── GUARDAR RESULTADO INDIVIDUAL ──
-// Maneja el caso especial de Biopsias: no requiere autorización previa,
-// porque la indicación surge durante otro estudio (VCC, Papanicolau, etc.)
-// y debe poder cargarse directamente, creando el registro REALIZADA.
 app.post('/savePracticeResult', async (req, res) => {
     const { dni, descripcion, resultadoValor, archivoBase64, archivoNombre, idPrestador, nombrePrestador } = req.body;
 
@@ -343,7 +340,6 @@ app.post('/savePracticeResult', async (req, res) => {
             .eq('estado', 'AUTORIZADA').single();
 
         if (existente) {
-            // Caso normal: ya había una práctica AUTORIZADA, la marcamos REALIZADA
             await supabase.from('practicas_autorizadas')
                 .update({
                     estado: 'REALIZADA',
@@ -356,53 +352,46 @@ app.post('/savePracticeResult', async (req, res) => {
             return res.json({ success: true, message: 'Práctica guardada correctamente.' });
         }
 
-        // ── CASO ESPECIAL: BIOPSIA SIN AUTORIZACIÓN PREVIA ──
-        // La biopsia surge como indicación durante otro estudio (VCC, PAP, etc.),
-        // no es una práctica preventiva programada de antemano. Si no existe
-        // autorización previa y la descripción es "Biopsia", la creamos
-        // directamente con estado REALIZADA.
-        if ((descripcion || '').toLowerCase().includes('biopsia')) {
-            const { data: afiliado } = await supabase
-                .from('afiliados')
-                .select('nombre, apellido')
-                .eq('dni', dni)
-                .single();
+        // Sin autorización previa: crear directamente como REALIZADA
+        const { data: afiliado } = await supabase
+            .from('afiliados')
+            .select('nombre, apellido')
+            .eq('dni', dni)
+            .single();
 
-            const nombreCompleto = afiliado ? `${afiliado.apellido} ${afiliado.nombre}` : null;
+        const nombreCompleto = afiliado ? `${afiliado.apellido} ${afiliado.nombre}` : null;
 
-            const { error: insertError } = await supabase
-                .from('practicas_autorizadas')
-                .insert({
-                    dni,
-                    nombre_completo: nombreCompleto,
-                    descripcion_practica: descripcion,
-                    estado: 'REALIZADA',
-                    resultado_texto: resultadoValor,
-                    enlace_pdf: enlacePdf,
-                    fecha_autorizacion: new Date().toISOString(),
-                    fecha_carga: new Date().toISOString(),
-                    id_prestador: idPrestador?.toString(),
-                    nombre_prestador: nombrePrestador
-                });
+        const { error: insertError } = await supabase
+            .from('practicas_autorizadas')
+            .insert({
+                dni,
+                nombre_completo: nombreCompleto,
+                descripcion_practica: descripcion,
+                estado: 'REALIZADA',
+                resultado_texto: resultadoValor,
+                enlace_pdf: enlacePdf,
+                fecha_autorizacion: new Date().toISOString(),
+                fecha_carga: new Date().toISOString(),
+                id_prestador: idPrestador?.toString(),
+                nombre_prestador: nombrePrestador,
+                observaciones: 'Cargado sin autorización previa del algoritmo'
+            });
 
-            if (insertError) {
-                console.error('Error creando biopsia sin autorización previa:', insertError.message);
-                return res.status(500).json({ success: false, message: 'Error al guardar la biopsia.' });
-            }
-
-            return res.json({ success: true, message: 'Biopsia cargada correctamente.' });
+        if (insertError) {
+            console.error('Error insertando práctica sin autorización:', insertError.message);
+            return res.status(500).json({ success: false, message: 'Error al guardar.' });
         }
 
-        // Cualquier otra práctica sin autorización previa: comportamiento original
-        res.json({ success: false, message: 'Práctica no encontrada o ya realizada.' });
+        return res.json({ 
+            success: true, 
+            message: 'Práctica cargada. Nota: no estaba autorizada por el algoritmo preventivo.' 
+        });
 
     } catch (error) {
         console.error('Error en /savePracticeResult:', error.message);
         res.status(500).json({ success: false, message: 'Error al guardar.' });
     }
 });
-
-
 // ── DATOS AFILIADO PARA SEMÁFORO ──
 app.get('/getDatosAfiliado/:dni', async (req, res) => {
     try {
