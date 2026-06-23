@@ -404,172 +404,128 @@ function buscarUltimaRealizacion(practica, practicasHistoricas, historial) {
 // ── GUARDAR RESULTADO INDIVIDUAL ──
 app.post("/savePracticeResult", async (req, res) => {
   const {
-    dni,
-    descripcion,
-    resultadoValor,
-    archivoBase64,
-    archivoNombre,
-    idPrestador,
-    nombrePrestador,
+    dni, descripcion, resultadoValor, archivoBase64,
+    archivoNombre, idPrestador, nombrePrestador,
   } = req.body;
+
+  const MAPA_LAB_HISTORICAS = {
+    'somf': 'somf', 'sangre oculta': 'somf',
+    'glucemia': 'glucemia', 'creatinina': 'creatinina',
+    'filtrado glomerular': 'indice_filtrado_glomerular',
+    'colesterol total': 'colesterol_total',
+    'hdl': 'colesterol_hdl', 'ldl': 'colesterol_ldl',
+    'trigliceridos': 'trigliceridos',
+    'vih': 'hiv', 'anti_vih': 'hiv',
+    'hepatitis b antigeno': 'hepatitis_b_antigeno',
+    'hepatitis b anti core': 'hepatitis_b_anti_core',
+    'hepatitis c': 'hepatitis_c',
+    'vdrl': 'vdrl', 'psa': 'psa',
+    'chagas hai': 'chagas_hai', 'chagas eclia': 'chagas_eclia',
+    'hpv genotipo 16': 'hpv_genotipo_16',
+    'hpv genotipo 18': 'hpv_genotipo_18',
+    'hpv otros': 'hpv_otros',
+    'hemoglobina glicosilada': 'hemoglobina_glicosilada',
+    'microalbuminuria': 'microalbuminuria',
+    'proteinuria': 'proteinuria',
+    'clearence': 'clearence_creatinina'
+  };
+
+  // Función auxiliar para actualizar practicas_historicas
+  async function actualizarHistorico(columna) {
+    const hoy = new Date().toISOString().split('T')[0];
+    const { data: historico } = await supabase
+      .from('practicas_historicas').select('id')
+      .eq('dni', dni).eq('tipo_practica', 'laboratorio').eq('fecha', hoy).single();
+
+    if (historico) {
+      await supabase.from('practicas_historicas')
+        .update({ [columna]: resultadoValor, ...(enlacePdf ? { link_pdf: JSON.stringify([enlacePdf]) } : {}) })
+        .eq('id', historico.id);
+    } else {
+      const { data: afil } = await supabase.from('afiliados')
+        .select('nombre, apellido').eq('dni', dni).single();
+      await supabase.from('practicas_historicas').insert({
+        dni,
+        nombre: afil?.nombre || null,
+        apellido: afil?.apellido || null,
+        tipo_practica: 'laboratorio',
+        fecha: hoy,
+        prestador: nombrePrestador,
+        [columna]: resultadoValor,
+        link_pdf: JSON.stringify(enlacePdf ? [enlacePdf] : [])
+      });
+    }
+  }
 
   try {
     let enlacePdf = null;
     if (archivoBase64) {
-      const buffer = Buffer.from(archivoBase64, "base64");
+      const buffer = Buffer.from(archivoBase64, 'base64');
       const fileName = `${dni}/${Date.now()}_${archivoNombre}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("resultados-practicas")
-        .upload(fileName, buffer, { contentType: "application/pdf" });
+      const { error: uploadError } = await supabase.storage
+        .from('resultados-practicas')
+        .upload(fileName, buffer, { contentType: 'application/pdf' });
       if (!uploadError) {
         const { data: urlData } = supabase.storage
-          .from("resultados-practicas")
-          .getPublicUrl(fileName);
+          .from('resultados-practicas').getPublicUrl(fileName);
         enlacePdf = urlData.publicUrl;
       }
     }
 
     const { data: existente } = await supabase
-      .from("practicas_autorizadas")
-      .select("id")
-      .eq("dni", dni)
-      .ilike("descripcion_practica", `%${descripcion}%`)
-      .eq("estado", "AUTORIZADA")
-      .single();
+      .from('practicas_autorizadas').select('id')
+      .eq('dni', dni)
+      .ilike('descripcion_practica', `%${descripcion}%`)
+      .eq('estado', 'AUTORIZADA').single();
 
     if (existente) {
-      await supabase
-        .from("practicas_autorizadas")
+      await supabase.from('practicas_autorizadas')
         .update({
-          estado: "REALIZADA",
+          estado: 'REALIZADA',
           resultado_texto: resultadoValor,
           enlace_pdf: enlacePdf,
           fecha_carga: new Date().toISOString(),
           id_prestador: idPrestador?.toString(),
           nombre_prestador: nombrePrestador,
-        })
-        .eq("id", existente.id);
-      return res.json({
-        success: true,
-        message: "Práctica guardada correctamente.",
-      });
-    }
+        }).eq('id', existente.id);
+    } else {
+      const { data: afiliado } = await supabase.from('afiliados')
+        .select('nombre, apellido').eq('dni', dni).single();
+      const nombreCompleto = afiliado ? `${afiliado.apellido} ${afiliado.nombre}` : null;
 
-    // Sin autorización previa: crear directamente como REALIZADA
-    const { data: afiliado } = await supabase
-      .from("afiliados")
-      .select("nombre, apellido")
-      .eq("dni", dni)
-      .single();
-
-    const nombreCompleto = afiliado
-      ? `${afiliado.apellido} ${afiliado.nombre}`
-      : null;
-
-    const { error: insertError } = await supabase
-      .from("practicas_autorizadas")
-      .insert({
-        dni,
-        nombre_completo: nombreCompleto,
+      const { error: insertError } = await supabase.from('practicas_autorizadas').insert({
+        dni, nombre_completo: nombreCompleto,
         descripcion_practica: descripcion,
-        estado: "REALIZADA",
+        estado: 'REALIZADA',
         resultado_texto: resultadoValor,
         enlace_pdf: enlacePdf,
         fecha_autorizacion: new Date().toISOString(),
         fecha_carga: new Date().toISOString(),
         id_prestador: idPrestador?.toString(),
         nombre_prestador: nombrePrestador,
-        observaciones: "Cargado sin autorización previa del algoritmo",
+        observaciones: 'Cargado sin autorización previa del algoritmo'
       });
 
-    if (insertError) {
-      console.error(
-        "Error insertando práctica sin autorización:",
-        insertError.message,
-      );
-      return res
-        .status(500)
-        .json({ success: false, message: "Error al guardar." });
-    }
-    // Actualizar practicas_historicas si es una práctica de laboratorio individual
-    const MAPA_LAB_HISTORICAS = {
-      somf: "somf",
-      "sangre oculta": "somf",
-      glucemia: "glucemia",
-      creatinina: "creatinina",
-      "filtrado glomerular": "indice_filtrado_glomerular",
-      "colesterol total": "colesterol_total",
-      hdl: "colesterol_hdl",
-      ldl: "colesterol_ldl",
-      trigliceridos: "trigliceridos",
-      vih: "hiv",
-      anti_vih: "hiv",
-      "hepatitis b antigeno": "hepatitis_b_antigeno",
-      "hepatitis b anti core": "hepatitis_b_anti_core",
-      "hepatitis c": "hepatitis_c",
-      vdrl: "vdrl",
-      psa: "psa",
-      "chagas hai": "chagas_hai",
-      "chagas eclia": "chagas_eclia",
-      "hpv genotipo 16": "hpv_genotipo_16",
-      "hpv genotipo 18": "hpv_genotipo_18",
-      "hpv otros": "hpv_otros",
-      "hemoglobina glicosilada": "hemoglobina_glicosilada",
-      microalbuminuria: "microalbuminuria",
-      proteinuria: "proteinuria",
-      clearence: "clearence_creatinina",
-    };
-
-    const descLower = (descripcion || "").toLowerCase();
-    const columnaHistorica = Object.entries(MAPA_LAB_HISTORICAS).find(([key]) =>
-      descLower.includes(key),
-    )?.[1];
-
-    if (columnaHistorica) {
-      // Buscar registro histórico del día
-      const hoy = new Date().toISOString().split("T")[0];
-      const { data: historico } = await supabase
-        .from("practicas_historicas")
-        .select("id")
-        .eq("dni", dni)
-        .eq("tipo_practica", "laboratorio")
-        .eq("fecha", hoy)
-        .single();
-
-      if (historico) {
-        // Actualizar el registro existente
-        await supabase
-          .from("practicas_historicas")
-          .update({ [columnaHistorica]: resultadoValor })
-          .eq("id", historico.id);
-      } else {
-        // Crear registro nuevo con solo ese valor
-        const { data: afil } = await supabase
-          .from("afiliados")
-          .select("nombre, apellido")
-          .eq("dni", dni)
-          .single();
-        await supabase.from("practicas_historicas").insert({
-          dni,
-          nombre: afil?.nombre || null,
-          apellido: afil?.apellido || null,
-          tipo_practica: "laboratorio",
-          fecha: hoy,
-          prestador: nombrePrestador,
-          [columnaHistorica]: resultadoValor,
-          link_pdf: JSON.stringify(enlacePdf ? [enlacePdf] : []),
-        });
+      if (insertError) {
+        console.error('Error insertando práctica sin autorización:', insertError.message);
+        return res.status(500).json({ success: false, message: 'Error al guardar.' });
       }
     }
 
-    return res.json({
-      success: true,
-      message:
-        "Práctica cargada. Nota: no estaba autorizada por el algoritmo preventivo.",
-    });
+    // Actualizar practicas_historicas para cualquier práctica de laboratorio
+    const descLower = (descripcion || '').toLowerCase();
+    const columnaHistorica = Object.entries(MAPA_LAB_HISTORICAS)
+      .find(([key]) => descLower.includes(key))?.[1];
+
+    if (columnaHistorica) {
+      await actualizarHistorico(columnaHistorica);
+    }
+
+    return res.json({ success: true, message: 'Práctica guardada correctamente.' });
+
   } catch (error) {
-    console.error("Error en /savePracticeResult:", error.message);
-    res.status(500).json({ success: false, message: "Error al guardar." });
+    console.error('Error en /savePracticeResult:', error.message);
+    res.status(500).json({ success: false, message: 'Error al guardar.' });
   }
 });
 // ── DATOS AFILIADO PARA SEMÁFORO ──
