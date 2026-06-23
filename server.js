@@ -499,6 +499,7 @@ app.post("/savePracticeResult", async (req, res) => {
         await supabase.from('practicas_historicas')
           .update({
             [columnaHistorica]: resultadoValor,
+            es_individual: true,
             ...(enlacePdf ? { link_pdf: JSON.stringify([enlacePdf]) } : {})
           }).eq('id', historico.id);
       } else {
@@ -511,6 +512,7 @@ app.post("/savePracticeResult", async (req, res) => {
           tipo_practica: 'laboratorio',
           fecha: hoy,
           prestador: nombrePrestador,
+          es_individual: true,
           [columnaHistorica]: resultadoValor,
           link_pdf: JSON.stringify(enlacePdf ? [enlacePdf] : [])
         });

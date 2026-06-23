@@ -180,6 +180,7 @@ function registrarEndpointGuardarLaboratorio(app, supabase) {
         tipo_practica: "laboratorio",
         fecha: new Date().toISOString().split("T")[0],
         prestador: nombrePrestador,
+        es_individual: true,
         link_pdf: linkPdfJSON,
       };
 
