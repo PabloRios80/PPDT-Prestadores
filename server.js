@@ -401,7 +401,6 @@ function buscarUltimaRealizacion(practica, practicasHistoricas, historial) {
   }
   return null;
 }
-// ── GUARDAR RESULTADO INDIVIDUAL ──
 app.post("/savePracticeResult", async (req, res) => {
   const {
     dni, descripcion, resultadoValor, archivoBase64,
@@ -429,33 +428,6 @@ app.post("/savePracticeResult", async (req, res) => {
     'proteinuria': 'proteinuria',
     'clearence': 'clearence_creatinina'
   };
-
-  // Función auxiliar para actualizar practicas_historicas
-  async function actualizarHistorico(columna) {
-    const hoy = new Date().toISOString().split('T')[0];
-    const { data: historico } = await supabase
-      .from('practicas_historicas').select('id')
-      .eq('dni', dni).eq('tipo_practica', 'laboratorio').eq('fecha', hoy).single();
-
-    if (historico) {
-      await supabase.from('practicas_historicas')
-        .update({ [columna]: resultadoValor, ...(enlacePdf ? { link_pdf: JSON.stringify([enlacePdf]) } : {}) })
-        .eq('id', historico.id);
-    } else {
-      const { data: afil } = await supabase.from('afiliados')
-        .select('nombre, apellido').eq('dni', dni).single();
-      await supabase.from('practicas_historicas').insert({
-        dni,
-        nombre: afil?.nombre || null,
-        apellido: afil?.apellido || null,
-        tipo_practica: 'laboratorio',
-        fecha: hoy,
-        prestador: nombrePrestador,
-        [columna]: resultadoValor,
-        link_pdf: JSON.stringify(enlacePdf ? [enlacePdf] : [])
-      });
-    }
-  }
 
   try {
     let enlacePdf = null;
@@ -489,8 +461,8 @@ app.post("/savePracticeResult", async (req, res) => {
           nombre_prestador: nombrePrestador,
         }).eq('id', existente.id);
     } else {
-      const { data: afiliado } = await supabase.from('afiliados')
-        .select('nombre, apellido').eq('dni', dni).single();
+      const { data: afiliado } = await supabase
+        .from('afiliados').select('nombre, apellido').eq('dni', dni).single();
       const nombreCompleto = afiliado ? `${afiliado.apellido} ${afiliado.nombre}` : null;
 
       const { error: insertError } = await supabase.from('practicas_autorizadas').insert({
@@ -512,13 +484,37 @@ app.post("/savePracticeResult", async (req, res) => {
       }
     }
 
-    // Actualizar practicas_historicas para cualquier práctica de laboratorio
+    // Actualizar practicas_historicas para prácticas de laboratorio
     const descLower = (descripcion || '').toLowerCase();
     const columnaHistorica = Object.entries(MAPA_LAB_HISTORICAS)
       .find(([key]) => descLower.includes(key))?.[1];
 
     if (columnaHistorica) {
-      await actualizarHistorico(columnaHistorica);
+      const hoy = new Date().toISOString().split('T')[0];
+      const { data: historico } = await supabase
+        .from('practicas_historicas').select('id')
+        .eq('dni', dni).eq('tipo_practica', 'laboratorio').eq('fecha', hoy).single();
+
+      if (historico) {
+        await supabase.from('practicas_historicas')
+          .update({
+            [columnaHistorica]: resultadoValor,
+            ...(enlacePdf ? { link_pdf: JSON.stringify([enlacePdf]) } : {})
+          }).eq('id', historico.id);
+      } else {
+        const { data: afil } = await supabase
+          .from('afiliados').select('nombre, apellido').eq('dni', dni).single();
+        await supabase.from('practicas_historicas').insert({
+          dni,
+          nombre: afil?.nombre || null,
+          apellido: afil?.apellido || null,
+          tipo_practica: 'laboratorio',
+          fecha: hoy,
+          prestador: nombrePrestador,
+          [columnaHistorica]: resultadoValor,
+          link_pdf: JSON.stringify(enlacePdf ? [enlacePdf] : [])
+        });
+      }
     }
 
     return res.json({ success: true, message: 'Práctica guardada correctamente.' });
