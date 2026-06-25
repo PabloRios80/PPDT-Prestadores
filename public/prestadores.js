@@ -47,19 +47,20 @@ function mostrarPortal() {
     prestadorActual.especialidad +
     (prestadorActual.ciudad ? " — " + prestadorActual.ciudad : "");
 }
-
 function cerrarSesion() {
   sessionStorage.removeItem("prestador");
-  prestadorActual = null;
-  document.getElementById("pantallaLogin").classList.remove("hidden");
-  document.getElementById("portalPrincipal").classList.add("hidden");
-  document.getElementById("loginUsuario").value = "";
-  document.getElementById("loginPassword").value = "";
-  document.getElementById("listaPracticas").innerHTML = "";
-  document.getElementById("headerAcciones").classList.add("hidden");
-  document.getElementById("dniSearch").value = "";
+  sessionStorage.removeItem("modoPreventivista");
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("token");
+  if (token) {
+    fetch("https://acceso.diapreventivoiapos.com/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token })
+    }).catch(() => {});
+  }
+  window.location.href = "https://acceso.diapreventivoiapos.com/login.html?redirect=prestadores";
 }
-
 // ==========================================
 // BUSCAR PRÁCTICAS
 // ==========================================
