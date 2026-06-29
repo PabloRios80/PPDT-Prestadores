@@ -40,6 +40,8 @@ const MAPEO_COLUMNAS_HISTORICAS = {
   hpv_otros: "hpv_otros",
   hemoglobina_glicosilada: "hemoglobina_glicosilada",
   microalbuminuria: "microalbuminuria",
+  creatinina_orina_espontanea: "creatinina_orina_espontanea",
+  rac_albumina_creatinina: "rac_albumina_creatinina",
   proteinuria: "proteinuria",
   clearence_creatinina: "clearence_creatinina",
   somf: "somf",
