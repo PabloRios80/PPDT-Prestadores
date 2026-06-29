@@ -950,7 +950,7 @@ function mostrarValoresExtraidos(data) {
     proteinuria: "proteinuria",
     clearence_creatinina: "clearence creatinina",
     somf: "sangre oculta en materia fecal - SOMF",
-    creatinina_orina_espontanea: "creatinina orina espontanea",
+    creatinina_orina_espontanea: "RAC - creatinina orina",
     rac_albumina_creatinina: "RAC - Relación Albúmina/Creatinina",
   };
 
