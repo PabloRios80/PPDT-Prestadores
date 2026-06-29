@@ -308,7 +308,7 @@ async function guardarPractica() {
   const linkDrive = document.getElementById("linkDrivePractica")?.value.trim();
   const dni = document.getElementById("dniSearch").value.trim();
 
-  if (!valor) return alert("Ingrese el resultado.");
+  if (!valor && !archivoBase64 && !linkDrive) return alert("Ingrese un resultado o adjunte un PDF.");
 
   let archivoBase64 = null;
   if (inputArchivo.files && inputArchivo.files.length > 0) {
