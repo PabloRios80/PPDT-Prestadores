@@ -56,10 +56,11 @@ function cerrarSesion() {
     fetch("https://acceso.diapreventivoiapos.com/logout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token })
+      body: JSON.stringify({ token }),
     }).catch(() => {});
   }
-  window.location.href = "https://acceso.diapreventivoiapos.com/login.html?redirect=prestadores";
+  window.location.href =
+    "https://acceso.diapreventivoiapos.com/login.html?redirect=prestadores";
 }
 // ==========================================
 // BUSCAR PRÁCTICAS
@@ -921,6 +922,8 @@ function mostrarValoresExtraidos(data) {
     proteinuria: "Proteinuria",
     clearence_creatinina: "Clearence Creatinina",
     somf: "SOMF",
+    creatinina_orina_espontanea: "Creatinina Orina Espontánea",
+    rac_albumina_creatinina: "RAC - Relación Albúmina/Creatinina",
   };
 
   const MAPEO_PRACTICAS = {
@@ -947,6 +950,8 @@ function mostrarValoresExtraidos(data) {
     proteinuria: "proteinuria",
     clearence_creatinina: "clearence creatinina",
     somf: "sangre oculta en materia fecal - SOMF",
+    creatinina_orina_espontanea: "creatinina orina espontanea",
+    rac_albumina_creatinina: "RAC - Relación Albúmina/Creatinina",
   };
 
   const valores = data.valores;
