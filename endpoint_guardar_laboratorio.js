@@ -118,13 +118,15 @@ function registrarEndpointGuardarLaboratorio(app, supabase) {
       let guardadas = 0;
       let noAutorizadas = 0;
       for (const practica of practicasUnicas) {
-        const { data: existente } = await supabase
+        const { data: existentes } = await supabase
           .from("practicas_autorizadas")
           .select("id")
           .eq("dni", dni)
           .ilike("descripcion_practica", `%${practica.descripcion}%`)
-          .eq("estado", "AUTORIZADA")
-          .single();
+          .eq("estado", "AUTORIZADA");
+
+        const existente =
+          existentes && existentes.length > 0 ? existentes[0] : null;
 
         if (existente) {
           await supabase
@@ -150,7 +152,6 @@ function registrarEndpointGuardarLaboratorio(app, supabase) {
           const nombreCompleto = afil
             ? `${afil.apellido} ${afil.nombre}`
             : null;
-
           await supabase.from("practicas_autorizadas").insert({
             dni,
             nombre_completo: nombreCompleto,
@@ -163,6 +164,7 @@ function registrarEndpointGuardarLaboratorio(app, supabase) {
             id_prestador: idPrestador?.toString(),
             nombre_prestador: nombrePrestador,
             observaciones: "Cargado sin autorización previa del algoritmo",
+            origen: "prestador",
           });
           noAutorizadas++;
           guardadas++;

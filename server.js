@@ -519,6 +519,7 @@ app.post("/savePracticeResult", async (req, res) => {
           id_prestador: idPrestador?.toString(),
           nombre_prestador: nombrePrestador,
           observaciones: "Cargado sin autorización previa del algoritmo",
+          origen: "prestador",
         });
 
       if (insertError) {
