@@ -123,6 +123,7 @@ function registrarEndpointGuardarLaboratorio(app, supabase) {
           .select("id")
           .eq("dni", dni)
           .ilike("descripcion_practica", `%${practica.descripcion}%`)
+          .not("descripcion_practica", "ilike", "%orina%")
           .eq("estado", "AUTORIZADA")
           .single();
 
