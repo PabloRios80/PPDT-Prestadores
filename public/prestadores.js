@@ -281,37 +281,19 @@ async function buscarPracticas() {
   }
 }
 
-// ==========================================
-// MODAL CARGA INDIVIDUAL
-// ==========================================
-function abrirModal(codigo, descripcion) {
-  practicaActual = { codigo, descripcion };
-  document.getElementById("modalTitulo").textContent = descripcion;
-  document.getElementById("resultadoValor").value = "";
-  document.getElementById("archivoPdf").value = "";
-  const linkInput = document.getElementById("linkDrivePractica");
-  if (linkInput) linkInput.value = "";
-  document.getElementById("modalCarga").classList.remove("hidden");
-}
-
-function cerrarModal() {
-  document.getElementById("modalCarga").classList.add("hidden");
-  document.getElementById("resultadoValor").value = "";
-  document.getElementById("archivoPdf").value = "";
-  const linkInput = document.getElementById("linkDrivePractica");
-  if (linkInput) linkInput.value = "";
-}
-
 async function guardarPractica() {
   const valor = document.getElementById("resultadoValor").value.trim();
   const inputArchivo = document.getElementById("archivoPdf");
   const linkDrive = document.getElementById("linkDrivePractica")?.value.trim();
   const dni = document.getElementById("dniSearch").value.trim();
 
-  if (!valor && !archivoBase64 && !linkDrive) return alert("Ingrese un resultado o adjunte un PDF.");
+  const hayArchivo = inputArchivo.files && inputArchivo.files.length > 0;
+
+  if (!valor && !hayArchivo && !linkDrive)
+    return alert("Ingrese un resultado o adjunte un PDF.");
 
   let archivoBase64 = null;
-  if (inputArchivo.files && inputArchivo.files.length > 0) {
+  if (hayArchivo) {
     try {
       archivoBase64 = await toBase64(inputArchivo.files[0]);
     } catch (e) {
@@ -336,7 +318,6 @@ async function guardarPractica() {
       return;
     }
   }
-
   const payload = {
     dni: dni,
     codigo: practicaActual.codigo,
