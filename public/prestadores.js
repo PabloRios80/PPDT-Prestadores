@@ -2,6 +2,34 @@ let practicaActual = null;
 let prestadorActual = null;
 let facturacionData = [];
 
+const PRACTICAS_LAB_DISPONIBLES = [
+  "glucemia en ayunas",
+  "colesterol total",
+  "HDL/colesterol",
+  "LDL/colesterol",
+  "trigliceridos",
+  "creatinina",
+  "formula filtrado glomerular",
+  "hemoglobina glicosilada",
+  "microalbuminuria",
+  "RAC - creatinina orina",
+  "RAC - Relación Albúmina/Creatinina",
+  "anticuerpos anti_VIH",
+  "hepatitis b antigeno de superficie_AGHB",
+  "hepatitis b anti core",
+  "hepatitis c _HCV_AC_IGG",
+  "VDRL",
+  "sifilis prueba treponemica ECLIA",
+  "test chagas HAI",
+  "test chagas ECLIA",
+  "test HPV genotipo 16",
+  "test HPV genotipo 18",
+  "test HPV otros genotipos alto riesgo",
+  "antigeno prostatico especifico total - PSA",
+  "sangre oculta en materia fecal - SOMF",
+  "papanicolau",
+];
+
 // ==========================================
 // LOGIN
 // ==========================================
@@ -38,6 +66,7 @@ async function hacerLogin() {
     errorDiv.classList.remove("hidden");
   }
 }
+
 function mostrarPortal() {
   document.getElementById("pantallaLogin").classList.add("hidden");
   document.getElementById("portalPrincipal").classList.remove("hidden");
@@ -47,6 +76,7 @@ function mostrarPortal() {
     prestadorActual.especialidad +
     (prestadorActual.ciudad ? " — " + prestadorActual.ciudad : "");
 }
+
 function cerrarSesion() {
   sessionStorage.removeItem("prestador");
   sessionStorage.removeItem("modoPreventivista");
@@ -62,6 +92,7 @@ function cerrarSesion() {
   window.location.href =
     "https://acceso.diapreventivoiapos.com/login.html?redirect=prestadores";
 }
+
 // ==========================================
 // BUSCAR PRÁCTICAS
 // ==========================================
@@ -78,7 +109,6 @@ async function buscarPracticas() {
   infoAfiliado.classList.add("hidden");
   loading.classList.remove("hidden");
 
-  // ── VERIFICAR AFILIACIÓN IAPOS ──
   try {
     const iaposRes = await fetch(`/verificar-afiliado/${dni}`);
     const iaposData = await iaposRes.json();
@@ -86,15 +116,14 @@ async function buscarPracticas() {
     if (!iaposData.esActivo) {
       loading.classList.add("hidden");
       lista.innerHTML = `
-                <div class="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
-                    <i class="fas fa-times-circle text-red-500 text-2xl mb-2"></i>
-                    <p class="font-bold text-red-700">DNI no corresponde a un afiliado activo de IAPOS.</p>
-                    <p class="text-sm text-red-500 mt-1">Verificá el número ingresado.</p>
-                </div>`;
+        <div class="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+          <i class="fas fa-times-circle text-red-500 text-2xl mb-2"></i>
+          <p class="font-bold text-red-700">DNI no corresponde a un afiliado activo de IAPOS.</p>
+          <p class="text-sm text-red-500 mt-1">Verificá el número ingresado.</p>
+        </div>`;
       return;
     }
 
-    // Mostrar info del afiliado verificado
     document.getElementById("nombreAfiliado").textContent =
       "👤 " + (iaposData.nombre || "DNI: " + dni);
     document.getElementById("especialidadVista").textContent =
@@ -133,6 +162,17 @@ async function buscarPracticas() {
         tituloPendientes.innerHTML = `<i class="fas fa-clock text-blue-500 mr-1"></i> Pendientes de carga (${pendientes.length})`;
         lista.appendChild(tituloPendientes);
 
+        // Botón agregar práctica para laboratorio
+        if (prestadorActual.especialidad === "Laboratorio Bioquimico") {
+          const btnAgregar = document.createElement("button");
+          btnAgregar.className =
+            "mb-3 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-purple-700";
+          btnAgregar.innerHTML =
+            '<i class="fas fa-plus mr-1"></i> Agregar práctica';
+          btnAgregar.addEventListener("click", abrirSelectorPractica);
+          lista.appendChild(btnAgregar);
+        }
+
         pendientes.forEach((p) => {
           const div = document.createElement("div");
           div.className =
@@ -140,9 +180,8 @@ async function buscarPracticas() {
 
           const info = document.createElement("div");
           info.innerHTML = `
-                        <p class="font-bold text-gray-800">${p.descripcion_practica}</p>
-                        <p class="text-xs text-gray-400">Cód: ${p.codigo_prestacion || "S/C"}</p>
-                    `;
+            <p class="font-bold text-gray-800">${p.descripcion_practica}</p>
+            <p class="text-xs text-gray-400">Cód: ${p.codigo_prestacion || "S/C"}</p>`;
 
           const btn = document.createElement("button");
           btn.className =
@@ -172,10 +211,10 @@ async function buscarPracticas() {
 
           const infoTexto = document.createElement("div");
           infoTexto.innerHTML = `
-                        <p class="font-bold text-gray-600">${p.descripcion_practica}</p>
-                        <p class="text-xs text-gray-400">
-                            Cargada: ${p.fecha_carga ? new Date(p.fecha_carga).toLocaleDateString("es-AR") : "S/F"}
-                        </p>`;
+            <p class="font-bold text-gray-600">${p.descripcion_practica}</p>
+            <p class="text-xs text-gray-400">
+              Cargada: ${p.fecha_carga ? new Date(p.fecha_carga).toLocaleDateString("es-AR") : "S/F"}
+            </p>`;
           div.appendChild(infoTexto);
 
           const derecha = document.createElement("div");
@@ -188,7 +227,8 @@ async function buscarPracticas() {
             btnVer.rel = "noopener noreferrer";
             btnVer.className =
               "bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-bold hover:bg-blue-200";
-            btnVer.innerHTML = '<i class="fas fa-file-pdf mr-1"></i> Ver PDF';
+            btnVer.innerHTML =
+              '<i class="fas fa-file-pdf mr-1"></i> Ver PDF';
             derecha.appendChild(btnVer);
           }
 
@@ -203,24 +243,18 @@ async function buscarPracticas() {
         });
       }
     } else {
-      // No hay prácticas autorizadas
       loading.classList.add("hidden");
 
-      // ── CASO ESPECIAL: BIOPSIAS ──
-      // La biopsia no se autoriza de antemano (no es una práctica
-      // preventiva programada): surge como indicación durante otro
-      // estudio (VCC, Papanicolau, etc.). El anatomopatólogo debe
-      // poder cargar el informe igual, sin esperar autorización previa.
       if (prestadorActual.especialidad === "Biopsias") {
         lista.innerHTML = "";
         const div = document.createElement("div");
         div.className =
           "bg-white p-4 rounded-lg shadow border-l-4 border-purple-600 flex justify-between items-center";
         div.innerHTML = `
-                    <div>
-                        <p class="font-bold text-gray-800">Informe de Biopsia / Anatomía Patológica</p>
-                        <p class="text-xs text-gray-400">No requiere autorización previa — cargá el resultado directamente.</p>
-                    </div>`;
+          <div>
+            <p class="font-bold text-gray-800">Informe de Biopsia / Anatomía Patológica</p>
+            <p class="text-xs text-gray-400">No requiere autorización previa — cargá el resultado directamente.</p>
+          </div>`;
         const btn = document.createElement("button");
         btn.className =
           "bg-purple-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-purple-700";
@@ -233,12 +267,10 @@ async function buscarPracticas() {
         return;
       }
 
-      // Resto de especialidades: intentar generar el plan preventivo
       loading.classList.remove("hidden");
       lista.innerHTML = "";
       try {
         await fetch(`/getPreventivePlan/${dni}`);
-        // Volver a buscar
         const response2 = await fetch(
           `/getPracticasPrestador/${dni}/${encodeURIComponent(prestadorActual.especialidad)}`,
         );
@@ -246,16 +278,16 @@ async function buscarPracticas() {
         loading.classList.add("hidden");
 
         if (data2.success && data2.practicas.length > 0) {
-          buscarPracticas(); // Recarga completa con las nuevas prácticas
+          buscarPracticas();
         } else {
           const msg = document.createElement("div");
           msg.className =
             "bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center";
           msg.innerHTML = `
-        <i class="fas fa-info-circle text-yellow-500 text-2xl mb-2"></i>
-        <p class="text-gray-600">No hay prácticas autorizadas por el algoritmo para este afiliado
-        en la especialidad <strong>${prestadorActual.especialidad}</strong>.</p>
-        <p class="text-sm text-gray-400 mt-2">Podés cargar igual usando el botón de abajo.</p>`;
+            <i class="fas fa-info-circle text-yellow-500 text-2xl mb-2"></i>
+            <p class="text-gray-600">No hay prácticas autorizadas por el algoritmo para este afiliado
+            en la especialidad <strong>${prestadorActual.especialidad}</strong>.</p>
+            <p class="text-sm text-gray-400 mt-2">Podés cargar igual usando el botón de abajo.</p>`;
           lista.appendChild(msg);
 
           if (prestadorActual.especialidad === "Laboratorio Bioquimico") {
@@ -268,6 +300,14 @@ async function buscarPracticas() {
               modoCargaPDF();
             });
             lista.appendChild(btnLab);
+
+            const btnAgregarExtra = document.createElement("button");
+            btnAgregarExtra.className =
+              "mt-2 bg-purple-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-purple-700 w-full";
+            btnAgregarExtra.innerHTML =
+              '<i class="fas fa-plus mr-2"></i> Agregar práctica manualmente';
+            btnAgregarExtra.addEventListener("click", abrirSelectorPractica);
+            lista.appendChild(btnAgregarExtra);
           }
         }
       } catch (e) {
@@ -281,6 +321,9 @@ async function buscarPracticas() {
   }
 }
 
+// ==========================================
+// MODAL CARGA INDIVIDUAL
+// ==========================================
 function abrirModal(codigo, descripcion) {
   practicaActual = { codigo, descripcion };
   document.getElementById("modalTitulo").textContent = descripcion;
@@ -297,6 +340,48 @@ function cerrarModal() {
   document.getElementById("archivoPdf").value = "";
   const linkInput = document.getElementById("linkDrivePractica");
   if (linkInput) linkInput.value = "";
+}
+
+// ==========================================
+// SELECTOR DE PRÁCTICA MANUAL
+// ==========================================
+function abrirSelectorPractica() {
+  const lista = document.getElementById("listaPracticas");
+
+  const existing = document.getElementById("selectorPracticaManual");
+  if (existing) existing.remove();
+
+  const div = document.createElement("div");
+  div.id = "selectorPracticaManual";
+  div.className =
+    "bg-white p-4 rounded-lg shadow border-l-4 border-purple-600 mt-4";
+  div.innerHTML = `
+    <p class="font-bold text-gray-700 mb-2">
+      <i class="fas fa-plus-circle text-purple-600 mr-1"></i> Seleccioná una práctica para cargar:
+    </p>
+    <select id="practicaManualSelect" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3">
+      <option value="">-- Seleccionar práctica --</option>
+      ${PRACTICAS_LAB_DISPONIBLES.map((p) => `<option value="${p}">${p}</option>`).join("")}
+    </select>
+    <div class="flex gap-2">
+      <button onclick="confirmarPracticaManual()"
+        class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-purple-700">
+        Cargar esta práctica
+      </button>
+      <button onclick="document.getElementById('selectorPracticaManual').remove()"
+        class="bg-gray-400 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-500">
+        Cancelar
+      </button>
+    </div>`;
+  lista.appendChild(div);
+}
+
+function confirmarPracticaManual() {
+  const select = document.getElementById("practicaManualSelect");
+  const descripcion = select.value;
+  if (!descripcion) return alert("Seleccioná una práctica.");
+  document.getElementById("selectorPracticaManual").remove();
+  abrirModal(null, descripcion);
 }
 
 async function guardarPractica() {
@@ -336,6 +421,7 @@ async function guardarPractica() {
       return;
     }
   }
+
   const payload = {
     dni: dni,
     codigo: practicaActual.codigo,
@@ -426,25 +512,25 @@ function renderTablaFacturacion() {
   }
 
   tablaDiv.innerHTML = `
-        <p class="text-sm text-gray-500 mb-3 italic">
-            <i class="fas fa-info-circle mr-1"></i>
-            Podés quitar prácticas que no vas a facturar este mes haciendo click en 
-            <span class="text-red-500 font-bold">✕</span>
-        </p>`;
+    <p class="text-sm text-gray-500 mb-3 italic">
+      <i class="fas fa-info-circle mr-1"></i>
+      Podés quitar prácticas que no vas a facturar este mes haciendo click en 
+      <span class="text-red-500 font-bold">✕</span>
+    </p>`;
 
   const tabla = document.createElement("table");
   tabla.className = "w-full text-sm border-collapse";
   tabla.innerHTML = `
-        <thead>
-            <tr class="bg-blue-900 text-white">
-                <th class="p-2 text-left">Fecha</th>
-                <th class="p-2 text-left">DNI</th>
-                <th class="p-2 text-left">Afiliado</th>
-                <th class="p-2 text-left">Práctica</th>
-                <th class="p-2 text-left">Código</th>
-                <th class="p-2 text-center">Quitar</th>
-            </tr>
-        </thead>`;
+    <thead>
+      <tr class="bg-blue-900 text-white">
+        <th class="p-2 text-left">Fecha</th>
+        <th class="p-2 text-left">DNI</th>
+        <th class="p-2 text-left">Afiliado</th>
+        <th class="p-2 text-left">Práctica</th>
+        <th class="p-2 text-left">Código</th>
+        <th class="p-2 text-center">Quitar</th>
+      </tr>
+    </thead>`;
 
   const tbody = document.createElement("tbody");
 
@@ -455,12 +541,12 @@ function renderTablaFacturacion() {
     const tr = document.createElement("tr");
     tr.className = "border-b hover:bg-gray-50";
     tr.innerHTML = `
-            <td class="p-2">${fecha}</td>
-            <td class="p-2">${p.dni || ""}</td>
-            <td class="p-2">${p.nombre_completo || ""}</td>
-            <td class="p-2">${p.descripcion_practica || ""}</td>
-            <td class="p-2">${p.codigo_prestacion || "S/C"}</td>
-            <td class="p-2 text-center"></td>`;
+      <td class="p-2">${fecha}</td>
+      <td class="p-2">${p.dni || ""}</td>
+      <td class="p-2">${p.nombre_completo || ""}</td>
+      <td class="p-2">${p.descripcion_practica || ""}</td>
+      <td class="p-2">${p.codigo_prestacion || "S/C"}</td>
+      <td class="p-2 text-center"></td>`;
 
     const btnQuitar = document.createElement("button");
     btnQuitar.className =
@@ -565,24 +651,9 @@ function evaluarSemaforo(campo, valor, datosAfiliado) {
     ? (datosAfiliado.sexo_biologico || "").toLowerCase()
     : "";
 
-  const VERDE = {
-    color: "#16a34a",
-    bg: "#dcfce7",
-    icono: "🟢",
-    texto: "Normal",
-  };
-  const AMARILLO = {
-    color: "#d97706",
-    bg: "#fef3c7",
-    icono: "🟡",
-    texto: "Límite",
-  };
-  const ROJO = {
-    color: "#dc2626",
-    bg: "#fee2e2",
-    icono: "🔴",
-    texto: "Alterado",
-  };
+  const VERDE = { color: "#16a34a", bg: "#dcfce7", icono: "🟢", texto: "Normal" };
+  const AMARILLO = { color: "#d97706", bg: "#fef3c7", icono: "🟡", texto: "Límite" };
+  const ROJO = { color: "#dc2626", bg: "#fee2e2", icono: "🔴", texto: "Alterado" };
 
   if (campo === "glucemia") {
     if (isNaN(vNum)) return null;
@@ -635,19 +706,10 @@ function evaluarSemaforo(campo, valor, datosAfiliado) {
   if (campo === "psa") {
     if (isNaN(vNum)) return null;
     let psaNormal, psaLimite;
-    if (edad <= 50) {
-      psaNormal = 2.0;
-      psaLimite = 3.0;
-    } else if (edad <= 60) {
-      psaNormal = 3.0;
-      psaLimite = 4.0;
-    } else if (edad <= 70) {
-      psaNormal = 4.0;
-      psaLimite = 5.0;
-    } else {
-      psaNormal = 4.5;
-      psaLimite = 6.0;
-    }
+    if (edad <= 50) { psaNormal = 2.0; psaLimite = 3.0; }
+    else if (edad <= 60) { psaNormal = 3.0; psaLimite = 4.0; }
+    else if (edad <= 70) { psaNormal = 4.0; psaLimite = 5.0; }
+    else { psaNormal = 4.5; psaLimite = 6.0; }
     if (vNum <= psaNormal) return VERDE;
     if (vNum <= psaLimite) return AMARILLO;
     return ROJO;
@@ -672,6 +734,11 @@ function evaluarSemaforo(campo, valor, datosAfiliado) {
   ) {
     if (vUpper === "NEGATIVO" || vUpper === "NO REACTIVO") return VERDE;
     if (vUpper === "POSITIVO" || vUpper === "REACTIVO") return ROJO;
+    return null;
+  }
+  if (campo === "sifilis_treponemica") {
+    if (vUpper === "POSITIVO" || vUpper === "REACTIVO") return ROJO;
+    if (vUpper === "NEGATIVO" || vUpper === "NO REACTIVO") return VERDE;
     return null;
   }
   if (campo === "hpv_genotipo_16" || campo === "hpv_genotipo_18") {
@@ -721,17 +788,17 @@ function agregarInforme() {
   div.className = "relative border border-gray-200 rounded-lg p-3";
   div.innerHTML = `
     <div class="flex justify-between items-center mb-2">
-        <label class="text-sm font-bold text-gray-600">
-            <i class="fas fa-file-pdf text-red-500 mr-1"></i>Informe ${index}
-        </label>
-        ${
-          index > 1
-            ? `<button onclick="this.closest('div.relative').remove()"
-            class="text-red-400 hover:text-red-600 text-xs">
-            <i class="fas fa-times"></i> Quitar
+      <label class="text-sm font-bold text-gray-600">
+        <i class="fas fa-file-pdf text-red-500 mr-1"></i>Informe ${index}
+      </label>
+      ${
+        index > 1
+          ? `<button onclick="this.closest('div.relative').remove()"
+          class="text-red-400 hover:text-red-600 text-xs">
+          <i class="fas fa-times"></i> Quitar
         </button>`
-            : ""
-        }
+          : ""
+      }
     </div>
     <input type="file" accept="application/pdf"
            class="archivoPDFItem w-full border border-gray-300 rounded-lg p-2
@@ -739,9 +806,9 @@ function agregarInforme() {
                   file:border-0 file:bg-blue-50 file:text-blue-700
                   hover:file:bg-blue-100">
     <div class="flex items-center gap-2 my-2">
-        <div class="flex-grow border-t border-gray-200"></div>
-        <span class="text-xs text-gray-400 font-bold">O</span>
-        <div class="flex-grow border-t border-gray-200"></div>
+      <div class="flex-grow border-t border-gray-200"></div>
+      <span class="text-xs text-gray-400 font-bold">O</span>
+      <div class="flex-grow border-t border-gray-200"></div>
     </div>
     <input type="text"
            class="linkDriveItem w-full border border-gray-300 rounded-lg p-2 text-sm
@@ -758,38 +825,30 @@ async function procesarTodosLosInformes() {
 
   if (!dni) return alert("Ingresá el DNI del paciente primero.");
 
-  // Recolectar las entradas: cada informe puede tener archivo O link, no ambos
   const entradas = [];
   bloquesInforme.forEach((bloque) => {
     const inputArchivo = bloque.querySelector(".archivoPDFItem");
     const inputLink = bloque.querySelector(".linkDriveItem");
-
     const archivo = inputArchivo && inputArchivo.files && inputArchivo.files[0];
     const link = inputLink && inputLink.value.trim();
-
-    if (archivo) {
-      entradas.push({ tipo: "archivo", archivo });
-    } else if (link) {
-      entradas.push({ tipo: "link", link });
-    }
+    if (archivo) entradas.push({ tipo: "archivo", archivo });
+    else if (link) entradas.push({ tipo: "link", link });
   });
 
   if (entradas.length === 0)
     return alert("Subí al menos un PDF o pegá un link de Drive.");
 
-  // Mostrar estado de carga
   resultadoDiv.classList.remove("hidden");
   resultadoDiv.innerHTML = `
-        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-            <i class="fas fa-spinner fa-spin text-blue-600 text-2xl mb-2"></i>
-            <p class="text-blue-700">Leyendo informe${entradas.length > 1 ? "s" : ""} con IA, puede tardar unos segundos...</p>
-        </div>`;
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+      <i class="fas fa-spinner fa-spin text-blue-600 text-2xl mb-2"></i>
+      <p class="text-blue-700">Leyendo informe${entradas.length > 1 ? "s" : ""} con IA, puede tardar unos segundos...</p>
+    </div>`;
 
   try {
     const resultados = [];
     for (const entrada of entradas) {
       let data;
-
       if (entrada.tipo === "archivo") {
         const base64 = await toBase64(entrada.archivo);
         const response = await fetch("/leerLaboratorioPDF", {
@@ -798,13 +857,8 @@ async function procesarTodosLosInformes() {
           body: JSON.stringify({ archivoBase64: base64 }),
         });
         data = await response.json();
-        if (!data.success)
-          throw new Error(data.message || "Error leyendo el PDF.");
-        resultados.push({
-          valores: data.valores,
-          base64,
-          nombre: entrada.archivo.name,
-        });
+        if (!data.success) throw new Error(data.message || "Error leyendo el PDF.");
+        resultados.push({ valores: data.valores, base64, nombre: entrada.archivo.name });
       } else {
         const response = await fetch("/leerLaboratorioPDFDesdeLink", {
           method: "POST",
@@ -813,25 +867,15 @@ async function procesarTodosLosInformes() {
         });
         data = await response.json();
         if (!data.success)
-          throw new Error(
-            data.message || "Error leyendo el PDF desde el link.",
-          );
-        resultados.push({
-          valores: data.valores,
-          base64: data.archivoBase64,
-          nombre: "informe_drive.pdf",
-        });
+          throw new Error(data.message || "Error leyendo el PDF desde el link.");
+        resultados.push({ valores: data.valores, base64: data.archivoBase64, nombre: "informe_drive.pdf" });
       }
     }
 
-    // Verificar DNI detectado vs DNI buscado
     const dnisDiferentes = [];
     resultados.forEach((r, i) => {
       const dniDetectado = r.valores.dni_paciente;
-      if (
-        dniDetectado &&
-        dniDetectado.replace(/\D/g, "") !== dni.replace(/\D/g, "")
-      ) {
+      if (dniDetectado && dniDetectado.replace(/\D/g, "") !== dni.replace(/\D/g, "")) {
         dnisDiferentes.push({ informe: i + 1, dniDetectado });
       }
     });
@@ -850,44 +894,31 @@ async function procesarTodosLosInformes() {
       }
     }
 
-    // Combinar valores de todos los informes (primero encontrado gana)
     let valoresCombinados = {};
     resultados.forEach((r) => {
       Object.entries(r.valores).forEach(([campo, valor]) => {
         if (campo === "dni_paciente") return;
-        if (valor && !valoresCombinados[campo])
-          valoresCombinados[campo] = valor;
+        if (valor && !valoresCombinados[campo]) valoresCombinados[campo] = valor;
       });
     });
 
-    const valoresConDatos = Object.entries(valoresCombinados).filter(
-      ([k, v]) => v,
-    );
+    const valoresConDatos = Object.entries(valoresCombinados).filter(([k, v]) => v);
     if (valoresConDatos.length === 0) {
       resultadoDiv.innerHTML = `
-                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
-                    <p class="text-yellow-700">No se encontraron valores en el/los informe(s). Verificá que sean los PDFs correctos.</p>
-                </div>`;
+        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+          <p class="text-yellow-700">No se encontraron valores en el/los informe(s). Verificá que sean los PDFs correctos.</p>
+        </div>`;
       return;
     }
 
-    // Guardar referencia a los PDFs originales (base64) para subirlos al confirmar
-    window._archivosPDFLab = resultados.map((r) => ({
-      base64: r.base64,
-      nombre: r.nombre,
-    }));
+    window._archivosPDFLab = resultados.map((r) => ({ base64: r.base64, nombre: r.nombre }));
 
-    mostrarValoresExtraidos({
-      dni,
-      nombre: "",
-      apellido: "",
-      valores: valoresCombinados,
-    });
+    mostrarValoresExtraidos({ dni, nombre: "", apellido: "", valores: valoresCombinados });
   } catch (e) {
     resultadoDiv.innerHTML = `
-            <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
-                <p class="text-red-600">Error: ${e.message}</p>
-            </div>`;
+      <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+        <p class="text-red-600">Error: ${e.message}</p>
+      </div>`;
   }
 }
 
@@ -959,10 +990,7 @@ function mostrarValoresExtraidos(data) {
   const valoresConDatos = Object.entries(valores).filter(([k, v]) => v);
 
   buscarDatosAfiliado(data.dni).then((datosAfiliado) => {
-    const rojos = [],
-      amarillos = [],
-      verdes = [],
-      sinSemaforo = [];
+    const rojos = [], amarillos = [], verdes = [], sinSemaforo = [];
 
     valoresConDatos.forEach(([campo, valor]) => {
       const semaforo = evaluarSemaforo(campo, valor, datosAfiliado);
@@ -982,74 +1010,66 @@ function mostrarValoresExtraidos(data) {
       const icono = semaforo ? semaforo.icono : "⚪";
       const texto = semaforo ? semaforo.texto : "";
       return `
-                <div style="display:flex; justify-content:space-between; align-items:center; 
-                            background:${bg}; border-left:4px solid ${color};
-                            padding:8px 12px; border-radius:6px; margin-bottom:4px;">
-                    <span style="color:#374151; font-size:0.85rem;">${ETIQUETAS[campo] || campo}</span>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <span style="font-weight:bold; color:${color}; font-size:0.85rem;">${valor}</span>
-                        <span style="font-size:0.75rem; background:white; padding:2px 6px; 
-                                     border-radius:12px; color:${color}; font-weight:bold;
-                                     border:1px solid ${color};">
-                            ${icono} ${texto}
-                        </span>
-                    </div>
-                </div>`;
+        <div style="display:flex; justify-content:space-between; align-items:center; 
+                    background:${bg}; border-left:4px solid ${color};
+                    padding:8px 12px; border-radius:6px; margin-bottom:4px;">
+          <span style="color:#374151; font-size:0.85rem;">${ETIQUETAS[campo] || campo}</span>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-weight:bold; color:${color}; font-size:0.85rem;">${valor}</span>
+            <span style="font-size:0.75rem; background:white; padding:2px 6px; 
+                         border-radius:12px; color:${color}; font-weight:bold;
+                         border:1px solid ${color};">
+              ${icono} ${texto}
+            </span>
+          </div>
+        </div>`;
     };
 
     let html = `
-            <div class="border-t pt-3">
-                <p class="font-bold text-gray-700 mb-3">
-                    Se encontraron <strong>${valoresConDatos.length}</strong> resultados.
-                    ${hayRojos ? '<span class="text-red-600 ml-2">⚠️ Hay valores alterados — revisá antes de confirmar.</span>' : ""}
-                </p>`;
+      <div class="border-t pt-3">
+        <p class="font-bold text-gray-700 mb-3">
+          Se encontraron <strong>${valoresConDatos.length}</strong> resultados.
+          ${hayRojos ? '<span class="text-red-600 ml-2">⚠️ Hay valores alterados — revisá antes de confirmar.</span>' : ""}
+        </p>`;
 
     if (rojos.length > 0) {
       html += `<p style="font-size:0.75rem;font-weight:bold;color:#dc2626;text-transform:uppercase;margin:8px 0 4px 0;">🔴 Valores alterados (${rojos.length})</p>`;
-      rojos.forEach((item) => {
-        html += renderFila(item);
-      });
+      rojos.forEach((item) => { html += renderFila(item); });
     }
     if (amarillos.length > 0) {
       html += `<p style="font-size:0.75rem;font-weight:bold;color:#d97706;text-transform:uppercase;margin:8px 0 4px 0;">🟡 Valores límite (${amarillos.length})</p>`;
-      amarillos.forEach((item) => {
-        html += renderFila(item);
-      });
+      amarillos.forEach((item) => { html += renderFila(item); });
     }
     if (verdes.length > 0) {
       html += `<p style="font-size:0.75rem;font-weight:bold;color:#16a34a;text-transform:uppercase;margin:8px 0 4px 0;">🟢 Valores normales (${verdes.length})</p>`;
-      verdes.forEach((item) => {
-        html += renderFila(item);
-      });
+      verdes.forEach((item) => { html += renderFila(item); });
     }
     if (sinSemaforo.length > 0) {
       html += `<p style="font-size:0.75rem;font-weight:bold;color:#6b7280;text-transform:uppercase;margin:8px 0 4px 0;">⚪ Otros valores</p>`;
-      sinSemaforo.forEach((item) => {
-        html += renderFila(item);
-      });
+      sinSemaforo.forEach((item) => { html += renderFila(item); });
     }
 
     window._datosPDFLab = { data, mapeo: MAPEO_PRACTICAS };
 
     if (hayRojos) {
       html += `
-                <div style="background:#fee2e2;border:1px solid #dc2626;border-radius:8px;padding:12px;margin-top:12px;text-align:center;">
-                    <p style="color:#dc2626;font-weight:bold;margin-bottom:8px;">
-                        ⚠️ Hay ${rojos.length} valor/es alterado/s. ¿Confirmás que los revisaste?
-                    </p>
-                    <button id="btnConfirmarPDF"
-                        style="background:#dc2626;color:white;padding:10px 24px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;">
-                        ✓ Revisé los valores — CONFIRMAR Y GUARDAR
-                    </button>
-                </div>`;
+        <div style="background:#fee2e2;border:1px solid #dc2626;border-radius:8px;padding:12px;margin-top:12px;text-align:center;">
+          <p style="color:#dc2626;font-weight:bold;margin-bottom:8px;">
+            ⚠️ Hay ${rojos.length} valor/es alterado/s. ¿Confirmás que los revisaste?
+          </p>
+          <button id="btnConfirmarPDF"
+            style="background:#dc2626;color:white;padding:10px 24px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;">
+            ✓ Revisé los valores — CONFIRMAR Y GUARDAR
+          </button>
+        </div>`;
     } else {
       html += `
-                <div style="text-align:center;margin-top:12px;">
-                    <button id="btnConfirmarPDF"
-                        style="background:#16a34a;color:white;padding:10px 24px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;">
-                        ✓ CONFIRMAR Y GUARDAR TODO
-                    </button>
-                </div>`;
+        <div style="text-align:center;margin-top:12px;">
+          <button id="btnConfirmarPDF"
+            style="background:#16a34a;color:white;padding:10px 24px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;">
+            ✓ CONFIRMAR Y GUARDAR TODO
+          </button>
+        </div>`;
     }
 
     html += `</div>`;
@@ -1079,10 +1099,10 @@ async function confirmarCargaPDFLab(data, mapeo) {
   const resultadoDiv = document.getElementById("pdfResultado");
 
   resultadoDiv.innerHTML = `
-        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-            <i class="fas fa-spinner fa-spin text-blue-600 text-2xl mb-2"></i>
-            <p class="text-blue-700">Guardando prácticas...</p>
-        </div>`;
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+      <i class="fas fa-spinner fa-spin text-blue-600 text-2xl mb-2"></i>
+      <p class="text-blue-700">Guardando prácticas...</p>
+    </div>`;
 
   const practicasParaGuardar = [];
   Object.entries(valores).forEach(([campo, valor]) => {
@@ -1094,9 +1114,9 @@ async function confirmarCargaPDFLab(data, mapeo) {
 
   if (practicasParaGuardar.length === 0) {
     resultadoDiv.innerHTML = `
-            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
-                <p class="text-yellow-700">No hay prácticas para guardar.</p>
-            </div>`;
+      <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+        <p class="text-yellow-700">No hay prácticas para guardar.</p>
+      </div>`;
     return;
   }
 
@@ -1119,17 +1139,17 @@ async function confirmarCargaPDFLab(data, mapeo) {
     if (res.success) {
       mensaje = `<p class="font-bold text-green-700">✅ ${res.guardadas} prácticas guardadas.</p>`;
       if (res.noAutorizadas > 0) {
-        mensaje += `<p class="text-yellow-600 text-sm mt-1">ℹ️ ${res.noAutorizadas} no estaban autorizadas para este paciente.</p>`;
+        mensaje += `<p class="text-yellow-600 text-sm mt-1">ℹ️ ${res.noAutorizadas} ya estaban cargadas o no estaban autorizadas.</p>`;
       }
     } else {
       mensaje = `<p class="text-red-600">Error: ${res.message}</p>`;
     }
 
     resultadoDiv.innerHTML = `
-            <div class="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-                <i class="fas fa-check-circle text-green-600 text-2xl mb-2"></i>
-                ${mensaje}
-            </div>`;
+      <div class="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+        <i class="fas fa-check-circle text-green-600 text-2xl mb-2"></i>
+        ${mensaje}
+      </div>`;
 
     setTimeout(() => {
       cerrarModalPDFLab();
@@ -1137,11 +1157,12 @@ async function confirmarCargaPDFLab(data, mapeo) {
     }, 2000);
   } catch (e) {
     resultadoDiv.innerHTML = `
-            <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
-                <p class="text-red-600">Error de conexión. Intentá de nuevo.</p>
-            </div>`;
+      <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+        <p class="text-red-600">Error de conexión. Intentá de nuevo.</p>
+      </div>`;
   }
 }
+
 function mapearEspecialidad(rol) {
   const MAPA = {
     bioquimico: "Laboratorio Bioquimico",
@@ -1167,6 +1188,7 @@ const toBase64 = (file) =>
     reader.onload = () => resolve(reader.result.split(",")[1]);
     reader.onerror = (error) => reject(error);
   });
+
 document.addEventListener("DOMContentLoaded", () => {
   if (window.dpEsPreventivista) {
     document.getElementById("selectorPreventivista").classList.remove("hidden");

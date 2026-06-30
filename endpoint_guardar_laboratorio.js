@@ -119,6 +119,19 @@ function registrarEndpointGuardarLaboratorio(app, supabase) {
       let guardadas = 0;
       let noAutorizadas = 0;
       for (const practica of practicasUnicas) {
+        // Verificar si ya fue cargada como REALIZADA
+        const { data: yaRealizada } = await supabase
+          .from("practicas_autorizadas")
+          .select("id, fecha_carga")
+          .eq("dni", dni)
+          .ilike("descripcion_practica", `%${practica.descripcion}%`)
+          .eq("estado", "REALIZADA");
+
+        if (yaRealizada && yaRealizada.length > 0) {
+          noAutorizadas++;
+          continue;
+        }
+
         const { data: existentes } = await supabase
           .from("practicas_autorizadas")
           .select("id")
