@@ -32,6 +32,7 @@ const MAPEO_COLUMNAS_HISTORICAS = {
   hepatitis_b_anti_core: "hepatitis_b_anti_core",
   hepatitis_c: "hepatitis_c",
   vdrl: "vdrl",
+  sifilis_treponemica: "sifilis_treponemica",
   psa: "psa",
   chagas_hai: "chagas_hai",
   chagas_eclia: "chagas_eclia",

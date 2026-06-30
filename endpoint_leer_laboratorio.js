@@ -46,6 +46,7 @@ const PROMPT_LABORATORIO = `Esto es un informe de laboratorio médico (puede ten
   "hepatitis_b_anti_core": "estado en mayúsculas o null",
   "hepatitis_c": "estado en mayúsculas o null",
   "vdrl": "estado en mayúsculas o null",
+  "sifilis_treponemica": "estado en mayúsculas (POSITIVO/NEGATIVO/REACTIVO/NO REACTIVO) o null — SOLO para prueba treponémica (ECLIA, TPHA, FTA-ABS). Es distinta del VDRL que es no treponémica.",
   "chagas_hai": "estado en mayúsculas o null",
   "chagas_eclia": "estado en mayúsculas o null",
   "hpv_genotipo_16": "DETECTABLE o NO DETECTABLE o null",
