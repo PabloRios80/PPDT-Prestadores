@@ -281,6 +281,24 @@ async function buscarPracticas() {
   }
 }
 
+function abrirModal(codigo, descripcion) {
+  practicaActual = { codigo, descripcion };
+  document.getElementById("modalTitulo").textContent = descripcion;
+  document.getElementById("resultadoValor").value = "";
+  document.getElementById("archivoPdf").value = "";
+  const linkInput = document.getElementById("linkDrivePractica");
+  if (linkInput) linkInput.value = "";
+  document.getElementById("modalCarga").classList.remove("hidden");
+}
+
+function cerrarModal() {
+  document.getElementById("modalCarga").classList.add("hidden");
+  document.getElementById("resultadoValor").value = "";
+  document.getElementById("archivoPdf").value = "";
+  const linkInput = document.getElementById("linkDrivePractica");
+  if (linkInput) linkInput.value = "";
+}
+
 async function guardarPractica() {
   const valor = document.getElementById("resultadoValor").value.trim();
   const inputArchivo = document.getElementById("archivoPdf");
