@@ -800,6 +800,30 @@ app.post("/extraerTextoPDF", async (req, res) => {
   }
 });
 
+app.post("/verificarPracticasDuplicadas", async (req, res) => {
+  try {
+    const { dni, practicas } = req.body;
+    const duplicadas = [];
+
+    for (const practica of practicas) {
+      const { data } = await supabase
+        .from("practicas_autorizadas")
+        .select("id")
+        .eq("dni", dni)
+        .ilike("descripcion_practica", `%${practica.descripcion}%`)
+        .eq("estado", "REALIZADA");
+
+      if (data && data.length > 0) {
+        duplicadas.push(practica.descripcion);
+      }
+    }
+
+    res.json({ success: true, duplicadas });
+  } catch (e) {
+    res.status(500).json({ success: false, duplicadas: [] });
+  }
+});
+
 app.listen(PORT, () =>
   console.log(`Portal Prestadores corriendo en http://localhost:${PORT}`),
 );

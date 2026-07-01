@@ -162,17 +162,6 @@ async function buscarPracticas() {
         tituloPendientes.innerHTML = `<i class="fas fa-clock text-blue-500 mr-1"></i> Pendientes de carga (${pendientes.length})`;
         lista.appendChild(tituloPendientes);
 
-        // Botón agregar práctica para laboratorio
-        if (prestadorActual.especialidad === "Laboratorio Bioquimico") {
-          const btnAgregar = document.createElement("button");
-          btnAgregar.className =
-            "mb-3 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-purple-700";
-          btnAgregar.innerHTML =
-            '<i class="fas fa-plus mr-1"></i> Agregar práctica';
-          btnAgregar.addEventListener("click", abrirSelectorPractica);
-          lista.appendChild(btnAgregar);
-        }
-
         pendientes.forEach((p) => {
           const div = document.createElement("div");
           div.className =
@@ -227,8 +216,7 @@ async function buscarPracticas() {
             btnVer.rel = "noopener noreferrer";
             btnVer.className =
               "bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-bold hover:bg-blue-200";
-            btnVer.innerHTML =
-              '<i class="fas fa-file-pdf mr-1"></i> Ver PDF';
+            btnVer.innerHTML = '<i class="fas fa-file-pdf mr-1"></i> Ver PDF';
             derecha.appendChild(btnVer);
           }
 
@@ -241,6 +229,17 @@ async function buscarPracticas() {
           div.appendChild(derecha);
           lista.appendChild(div);
         });
+      }
+
+      // ── BOTÓN AGREGAR PRÁCTICA — siempre visible para laboratorio ──
+      if (prestadorActual.especialidad === "Laboratorio Bioquimico") {
+        const btnAgregar = document.createElement("button");
+        btnAgregar.className =
+          "mt-4 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-purple-700 w-full";
+        btnAgregar.innerHTML =
+          '<i class="fas fa-plus mr-1"></i> Agregar práctica no autorizada';
+        btnAgregar.addEventListener("click", abrirSelectorPractica);
+        lista.appendChild(btnAgregar);
       }
     } else {
       loading.classList.add("hidden");
@@ -651,9 +650,24 @@ function evaluarSemaforo(campo, valor, datosAfiliado) {
     ? (datosAfiliado.sexo_biologico || "").toLowerCase()
     : "";
 
-  const VERDE = { color: "#16a34a", bg: "#dcfce7", icono: "🟢", texto: "Normal" };
-  const AMARILLO = { color: "#d97706", bg: "#fef3c7", icono: "🟡", texto: "Límite" };
-  const ROJO = { color: "#dc2626", bg: "#fee2e2", icono: "🔴", texto: "Alterado" };
+  const VERDE = {
+    color: "#16a34a",
+    bg: "#dcfce7",
+    icono: "🟢",
+    texto: "Normal",
+  };
+  const AMARILLO = {
+    color: "#d97706",
+    bg: "#fef3c7",
+    icono: "🟡",
+    texto: "Límite",
+  };
+  const ROJO = {
+    color: "#dc2626",
+    bg: "#fee2e2",
+    icono: "🔴",
+    texto: "Alterado",
+  };
 
   if (campo === "glucemia") {
     if (isNaN(vNum)) return null;
@@ -706,10 +720,19 @@ function evaluarSemaforo(campo, valor, datosAfiliado) {
   if (campo === "psa") {
     if (isNaN(vNum)) return null;
     let psaNormal, psaLimite;
-    if (edad <= 50) { psaNormal = 2.0; psaLimite = 3.0; }
-    else if (edad <= 60) { psaNormal = 3.0; psaLimite = 4.0; }
-    else if (edad <= 70) { psaNormal = 4.0; psaLimite = 5.0; }
-    else { psaNormal = 4.5; psaLimite = 6.0; }
+    if (edad <= 50) {
+      psaNormal = 2.0;
+      psaLimite = 3.0;
+    } else if (edad <= 60) {
+      psaNormal = 3.0;
+      psaLimite = 4.0;
+    } else if (edad <= 70) {
+      psaNormal = 4.0;
+      psaLimite = 5.0;
+    } else {
+      psaNormal = 4.5;
+      psaLimite = 6.0;
+    }
     if (vNum <= psaNormal) return VERDE;
     if (vNum <= psaLimite) return AMARILLO;
     return ROJO;
@@ -857,8 +880,13 @@ async function procesarTodosLosInformes() {
           body: JSON.stringify({ archivoBase64: base64 }),
         });
         data = await response.json();
-        if (!data.success) throw new Error(data.message || "Error leyendo el PDF.");
-        resultados.push({ valores: data.valores, base64, nombre: entrada.archivo.name });
+        if (!data.success)
+          throw new Error(data.message || "Error leyendo el PDF.");
+        resultados.push({
+          valores: data.valores,
+          base64,
+          nombre: entrada.archivo.name,
+        });
       } else {
         const response = await fetch("/leerLaboratorioPDFDesdeLink", {
           method: "POST",
@@ -867,15 +895,24 @@ async function procesarTodosLosInformes() {
         });
         data = await response.json();
         if (!data.success)
-          throw new Error(data.message || "Error leyendo el PDF desde el link.");
-        resultados.push({ valores: data.valores, base64: data.archivoBase64, nombre: "informe_drive.pdf" });
+          throw new Error(
+            data.message || "Error leyendo el PDF desde el link.",
+          );
+        resultados.push({
+          valores: data.valores,
+          base64: data.archivoBase64,
+          nombre: "informe_drive.pdf",
+        });
       }
     }
 
     const dnisDiferentes = [];
     resultados.forEach((r, i) => {
       const dniDetectado = r.valores.dni_paciente;
-      if (dniDetectado && dniDetectado.replace(/\D/g, "") !== dni.replace(/\D/g, "")) {
+      if (
+        dniDetectado &&
+        dniDetectado.replace(/\D/g, "") !== dni.replace(/\D/g, "")
+      ) {
         dnisDiferentes.push({ informe: i + 1, dniDetectado });
       }
     });
@@ -898,11 +935,14 @@ async function procesarTodosLosInformes() {
     resultados.forEach((r) => {
       Object.entries(r.valores).forEach(([campo, valor]) => {
         if (campo === "dni_paciente") return;
-        if (valor && !valoresCombinados[campo]) valoresCombinados[campo] = valor;
+        if (valor && !valoresCombinados[campo])
+          valoresCombinados[campo] = valor;
       });
     });
 
-    const valoresConDatos = Object.entries(valoresCombinados).filter(([k, v]) => v);
+    const valoresConDatos = Object.entries(valoresCombinados).filter(
+      ([k, v]) => v,
+    );
     if (valoresConDatos.length === 0) {
       resultadoDiv.innerHTML = `
         <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
@@ -911,9 +951,17 @@ async function procesarTodosLosInformes() {
       return;
     }
 
-    window._archivosPDFLab = resultados.map((r) => ({ base64: r.base64, nombre: r.nombre }));
+    window._archivosPDFLab = resultados.map((r) => ({
+      base64: r.base64,
+      nombre: r.nombre,
+    }));
 
-    mostrarValoresExtraidos({ dni, nombre: "", apellido: "", valores: valoresCombinados });
+    mostrarValoresExtraidos({
+      dni,
+      nombre: "",
+      apellido: "",
+      valores: valoresCombinados,
+    });
   } catch (e) {
     resultadoDiv.innerHTML = `
       <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
@@ -990,7 +1038,10 @@ function mostrarValoresExtraidos(data) {
   const valoresConDatos = Object.entries(valores).filter(([k, v]) => v);
 
   buscarDatosAfiliado(data.dni).then((datosAfiliado) => {
-    const rojos = [], amarillos = [], verdes = [], sinSemaforo = [];
+    const rojos = [],
+      amarillos = [],
+      verdes = [],
+      sinSemaforo = [];
 
     valoresConDatos.forEach(([campo, valor]) => {
       const semaforo = evaluarSemaforo(campo, valor, datosAfiliado);
@@ -1034,19 +1085,27 @@ function mostrarValoresExtraidos(data) {
 
     if (rojos.length > 0) {
       html += `<p style="font-size:0.75rem;font-weight:bold;color:#dc2626;text-transform:uppercase;margin:8px 0 4px 0;">🔴 Valores alterados (${rojos.length})</p>`;
-      rojos.forEach((item) => { html += renderFila(item); });
+      rojos.forEach((item) => {
+        html += renderFila(item);
+      });
     }
     if (amarillos.length > 0) {
       html += `<p style="font-size:0.75rem;font-weight:bold;color:#d97706;text-transform:uppercase;margin:8px 0 4px 0;">🟡 Valores límite (${amarillos.length})</p>`;
-      amarillos.forEach((item) => { html += renderFila(item); });
+      amarillos.forEach((item) => {
+        html += renderFila(item);
+      });
     }
     if (verdes.length > 0) {
       html += `<p style="font-size:0.75rem;font-weight:bold;color:#16a34a;text-transform:uppercase;margin:8px 0 4px 0;">🟢 Valores normales (${verdes.length})</p>`;
-      verdes.forEach((item) => { html += renderFila(item); });
+      verdes.forEach((item) => {
+        html += renderFila(item);
+      });
     }
     if (sinSemaforo.length > 0) {
       html += `<p style="font-size:0.75rem;font-weight:bold;color:#6b7280;text-transform:uppercase;margin:8px 0 4px 0;">⚪ Otros valores</p>`;
-      sinSemaforo.forEach((item) => { html += renderFila(item); });
+      sinSemaforo.forEach((item) => {
+        html += renderFila(item);
+      });
     }
 
     window._datosPDFLab = { data, mapeo: MAPEO_PRACTICAS };
@@ -1101,7 +1160,7 @@ async function confirmarCargaPDFLab(data, mapeo) {
   resultadoDiv.innerHTML = `
     <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
       <i class="fas fa-spinner fa-spin text-blue-600 text-2xl mb-2"></i>
-      <p class="text-blue-700">Guardando prácticas...</p>
+      <p class="text-blue-700">Verificando prácticas...</p>
     </div>`;
 
   const practicasParaGuardar = [];
@@ -1120,12 +1179,82 @@ async function confirmarCargaPDFLab(data, mapeo) {
     return;
   }
 
+  // Verificar duplicados ANTES de guardar
+  try {
+    const resCheck = await fetch("/verificarPracticasDuplicadas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dni, practicas: practicasParaGuardar }),
+    });
+    const checkData = await resCheck.json();
+
+    if (checkData.duplicadas && checkData.duplicadas.length > 0) {
+      const listaDuplicadas = checkData.duplicadas
+        .map((p) => `• ${p}`)
+        .join("\n");
+
+      resultadoDiv.innerHTML = `
+        <div class="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-5">
+          <p class="font-bold text-yellow-800 text-lg mb-3">
+            ⚠️ Las siguientes prácticas ya fueron cargadas para este paciente:
+          </p>
+          <div class="bg-white rounded-lg p-3 mb-4 text-sm text-gray-700">
+            ${checkData.duplicadas.map((p) => `<p class="py-1 border-b border-gray-100">• ${p}</p>`).join("")}
+          </div>
+          <p class="text-yellow-700 text-sm mb-4">
+            Si guardás de nuevo, se pisará el resultado anterior. ¿Querés continuar igual?
+          </p>
+          <div class="flex gap-3 justify-center">
+            <button id="btnContinuarIgual"
+              class="bg-yellow-500 hover:bg-yellow-600 text-white px-5 py-2 rounded-lg font-bold">
+              Continuar y pisar
+            </button>
+            <button id="btnCancelarDuplicado"
+              class="bg-gray-400 hover:bg-gray-500 text-white px-5 py-2 rounded-lg font-bold">
+              Cancelar
+            </button>
+          </div>
+        </div>`;
+
+      document
+        .getElementById("btnCancelarDuplicado")
+        .addEventListener("click", () => {
+          resultadoDiv.innerHTML = "";
+          resultadoDiv.classList.add("hidden");
+        });
+
+      document
+        .getElementById("btnContinuarIgual")
+        .addEventListener("click", () => {
+          ejecutarGuardadoLab(dni, practicasParaGuardar, valores, resultadoDiv);
+        });
+      return;
+    }
+  } catch (e) {
+    console.warn("No se pudo verificar duplicados, continuando...", e.message);
+  }
+
+  ejecutarGuardadoLab(dni, practicasParaGuardar, valores, resultadoDiv);
+}
+
+async function ejecutarGuardadoLab(
+  dni,
+  practicasParaGuardar,
+  valores,
+  resultadoDiv,
+) {
+  resultadoDiv.innerHTML = `
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+      <i class="fas fa-spinner fa-spin text-blue-600 text-2xl mb-2"></i>
+      <p class="text-blue-700">Guardando prácticas...</p>
+    </div>`;
+
   try {
     const response = await fetch("/savePracticasLaboratorio", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        dni: dni,
+        dni,
         practicas: practicasParaGuardar,
         valoresCompletos: valores,
         archivosPDF: window._archivosPDFLab || [],
@@ -1138,9 +1267,6 @@ async function confirmarCargaPDFLab(data, mapeo) {
     let mensaje = "";
     if (res.success) {
       mensaje = `<p class="font-bold text-green-700">✅ ${res.guardadas} prácticas guardadas.</p>`;
-      if (res.noAutorizadas > 0) {
-        mensaje += `<p class="text-yellow-600 text-sm mt-1">ℹ️ ${res.noAutorizadas} ya estaban cargadas o no estaban autorizadas.</p>`;
-      }
     } else {
       mensaje = `<p class="text-red-600">Error: ${res.message}</p>`;
     }
@@ -1162,7 +1288,6 @@ async function confirmarCargaPDFLab(data, mapeo) {
       </div>`;
   }
 }
-
 function mapearEspecialidad(rol) {
   const MAPA = {
     bioquimico: "Laboratorio Bioquimico",
