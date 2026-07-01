@@ -27,7 +27,6 @@ const PRACTICAS_LAB_DISPONIBLES = [
   "test HPV otros genotipos alto riesgo",
   "antigeno prostatico especifico total - PSA",
   "sangre oculta en materia fecal - SOMF",
-  "papanicolau",
 ];
 
 // ==========================================
