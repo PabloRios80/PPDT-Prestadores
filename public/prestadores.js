@@ -207,7 +207,6 @@ async function buscarPracticas() {
 
           const derecha = document.createElement("div");
           derecha.className = "flex items-center gap-2";
-
           if (p.enlace_pdf) {
             const btnVer = document.createElement("a");
             btnVer.href = p.enlace_pdf;
@@ -225,11 +224,39 @@ async function buscarPracticas() {
           badge.innerHTML = "✓ REALIZADA";
           derecha.appendChild(badge);
 
+          const btnEliminar = document.createElement("button");
+          btnEliminar.className =
+            "bg-red-100 text-red-700 px-3 py-1 rounded-full text-sm font-bold hover:bg-red-200";
+          btnEliminar.innerHTML = '<i class="fas fa-trash mr-1"></i>Eliminar';
+          btnEliminar.addEventListener("click", async function () {
+            if (
+              !confirm(
+                `¿Confirmás borrar la práctica "${p.descripcion_practica}"? Esta acción no se puede deshacer.`,
+              )
+            )
+              return;
+            try {
+              const res = await fetch(`/eliminarPractica/${p.id}`, {
+                method: "DELETE",
+              });
+              const data = await res.json();
+              if (data.success) {
+                alert("✅ Práctica eliminada correctamente.");
+                buscarPracticas();
+              } else {
+                alert("Error al eliminar: " + data.message);
+              }
+            } catch (e) {
+              alert("Error de conexión.");
+            }
+          });
+          derecha.appendChild(btnEliminar);
+
           div.appendChild(derecha);
           lista.appendChild(div);
         });
       }
-      const badge = document.createElement("span");
+
       // ── BOTÓN AGREGAR PRÁCTICA — siempre visible para laboratorio ──
       if (prestadorActual.especialidad === "Laboratorio Bioquimico") {
         const btnAgregar = document.createElement("button");
