@@ -4,116 +4,79 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Portal Prestadores - IAPOS</title>
-    <link
-      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
-      rel="stylesheet"
-    />
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
-    />
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <script>
       (function () {
         const params = new URLSearchParams(window.location.search);
         const token = params.get("token");
         if (!token) {
-          window.location.href =
-            "https://acceso.diapreventivoiapos.com/login.html?redirect=prestadores";
+          window.location.href = "https://acceso.diapreventivoiapos.com/login.html?redirect=prestadores";
           return;
         }
         try {
           const payload = JSON.parse(atob(token.split(".")[1]));
           if (Date.now() >= payload.exp * 1000) {
-            window.location.href =
-              "https://acceso.diapreventivoiapos.com/login.html?redirect=prestadores";
+            window.location.href = "https://acceso.diapreventivoiapos.com/login.html?redirect=prestadores";
             return;
           }
           window.dpProfesional = payload.nombre;
           window.dpRol = payload.profesion;
           window.dpEsPreventivista = payload.profesion === "preventivista";
         } catch (e) {
-          window.location.href =
-            "https://acceso.diapreventivoiapos.com/login.html?redirect=prestadores";
+          window.location.href = "https://acceso.diapreventivoiapos.com/login.html?redirect=prestadores";
         }
       })();
     </script>
   </head>
   <body class="bg-gray-100 min-h-screen flex flex-col">
-    <!-- HEADER IAPOS -->
+
+    <!-- HEADER -->
     <header class="bg-blue-600 text-white shadow-lg">
       <div class="container mx-auto px-4 py-4">
-        <div
-          class="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0"
-        >
+        <div class="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
           <div class="flex items-center space-x-4">
             <div class="bg-blue-500 rounded-full p-2">
               <img src="images/logo_iapos.png" alt="Logo IAPOS" class="h-20" />
             </div>
             <div>
-              <h1 class="text-xl font-bold">
-                Portal Prestadores — Día Preventivo
-              </h1>
+              <h1 class="text-xl font-bold">Portal Prestadores — Día Preventivo</h1>
               <p id="headerEspecialidad" class="text-blue-200 text-sm"></p>
             </div>
           </div>
           <div id="headerAcciones" class="hidden flex items-center gap-3">
-              <span id="headerNombre" class="text-sm text-blue-200 hidden md:block"></span>
-              <button onclick="mostrarTabPrestador('actividad')"
-                  class="bg-blue-500 hover:bg-blue-400 text-white px-4 py-2 rounded-lg text-sm font-bold transition">
-                  <i class="fas fa-list-check mr-1"></i> Mi Actividad
-              </button>
-          <div id="headerAcciones" class="hidden flex items-center gap-3">
-            <span
-              id="headerNombre"
-              class="text-sm text-blue-200 hidden md:block"
-            ></span>
-            <button
-              onclick="verFacturacion()"
-              class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition"
-            >
+            <span id="headerNombre" class="text-sm text-blue-200 hidden md:block"></span>
+            <button onclick="mostrarTabPrestador('actividad')"
+              class="bg-blue-500 hover:bg-blue-400 text-white px-4 py-2 rounded-lg text-sm font-bold transition">
+              <i class="fas fa-list-check mr-1"></i> Mi Actividad
+            </button>
+            <button onclick="verFacturacion()"
+              class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition">
               <i class="fas fa-file-invoice-dollar mr-1"></i> Facturación
             </button>
-            <button
-              onclick="cerrarSesion()"
-              class="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg text-sm transition"
-            >
+            <button onclick="cerrarSesion()"
+              class="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg text-sm transition">
               <i class="fas fa-sign-out-alt"></i>
             </button>
           </div>
         </div>
       </div>
     </header>
-    <!-- ════════════════════════════════════════════ -->
 
-    <div
-      id="selectorPreventivista"
-      class="hidden flex-grow flex items-center justify-center py-10"
-    >
+    <!-- SELECTOR PREVENTIVISTA -->
+    <div id="selectorPreventivista" class="hidden flex-grow flex items-center justify-center py-10">
       <div style="max-width: 580px; width: 100%; padding: 0 16px">
-        <div
-          class="bg-white rounded-xl shadow-lg p-7 border border-blue-100"
-          style="padding: 26px"
-        >
+        <div class="bg-white rounded-xl shadow-lg p-7 border border-blue-100" style="padding: 26px">
           <h2 class="text-lg font-bold text-blue-800 mb-6 flex items-center">
-            <i class="fas fa-user-shield mr-2 text-blue-400"></i> Ingresar como
-            prestador
+            <i class="fas fa-user-shield mr-2 text-blue-400"></i> Ingresar como prestador
           </h2>
           <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 mb-1"
-              >Especialidad</label
-            >
-            <select
-              id="selectEspecialidadPrev"
-              onchange="actualizarPrestadoresPrev()"
-              class="w-full border border-gray-300 rounded-lg p-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-            >
+            <label class="block text-sm font-medium text-gray-700 mb-1">Especialidad</label>
+            <select id="selectEspecialidadPrev" onchange="actualizarPrestadoresPrev()"
+              class="w-full border border-gray-300 rounded-lg p-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
               <option value="">Seleccioná especialidad</option>
-              <option value="Laboratorio Bioquimico">
-                Laboratorio Bioquímico
-              </option>
-              <option value="Diagnostico por Imagenes">
-                Diagnóstico por Imágenes
-              </option>
+              <option value="Laboratorio Bioquimico">Laboratorio Bioquímico</option>
+              <option value="Diagnostico por Imagenes">Diagnóstico por Imágenes</option>
               <option value="Gastroenterologia">Gastroenterología</option>
               <option value="Densitometria">Densitometría</option>
               <option value="Biopsias">Biopsias</option>
@@ -124,20 +87,14 @@
             </select>
           </div>
           <div class="mb-6">
-            <label class="block text-sm font-medium text-gray-700 mb-1"
-              >Prestador (a cargo de la facturación)</label
-            >
-            <select
-              id="selectPrestadorPrev"
-              class="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-            >
+            <label class="block text-sm font-medium text-gray-700 mb-1">Prestador (a cargo de la facturación)</label>
+            <select id="selectPrestadorPrev"
+              class="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
               <option value="">Elegí especialidad primero</option>
             </select>
           </div>
-          <button
-            onclick="ingresarComoPrestadorPrev()"
-            class="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-lg font-bold transition text-sm"
-          >
+          <button onclick="ingresarComoPrestadorPrev()"
+            class="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-lg font-bold transition text-sm">
             <i class="fas fa-sign-in-alt mr-2"></i> Ingresar
           </button>
         </div>
@@ -152,23 +109,17 @@
           { id: 17, nombre: "Diagnostico por Imagenes S.A.", tipo: "simple" },
         ],
         Gastroenterologia: [{ id: 20, nombre: "VESALIO", tipo: "inst" }],
-        Densitometria: [],
-        Biopsias: [],
-        Papanicolau: [],
-        Oftalmologia: [],
-        Espirometria: [],
-        Odontologia: [],
+        Densitometria: [], Biopsias: [], Papanicolau: [],
+        Oftalmologia: [], Espirometria: [], Odontologia: [],
       };
 
       function actualizarPrestadoresPrev() {
         const esp = document.getElementById("selectEspecialidadPrev").value;
         const select = document.getElementById("selectPrestadorPrev");
         select.innerHTML = '<option value="">Seleccioná prestador</option>';
-
         const lista = PRESTADORES_POR_ESPECIALIDAD_PREV[esp] || [];
         if (lista.length === 0) {
-          select.innerHTML =
-            '<option value="">Sin prestadores cargados para esta especialidad</option>';
+          select.innerHTML = '<option value="">Sin prestadores cargados para esta especialidad</option>';
           return;
         }
         lista.forEach((p) => {
@@ -182,142 +133,92 @@
       function ingresarComoPrestadorPrev() {
         const esp = document.getElementById("selectEspecialidadPrev").value;
         const prestVal = document.getElementById("selectPrestadorPrev").value;
-        if (!esp || !prestVal)
-          return alert("Seleccioná especialidad y prestador.");
-
+        if (!esp || !prestVal) return alert("Seleccioná especialidad y prestador.");
         const [tipo, id] = prestVal.split("_");
         const lista = PRESTADORES_POR_ESPECIALIDAD_PREV[esp] || [];
-        const prest = lista.find(
-          (p) => p.tipo === tipo && p.id.toString() === id,
-        );
+        const prest = lista.find((p) => p.tipo === tipo && p.id.toString() === id);
         if (!prest) return alert("Prestador no encontrado.");
-
-        prestadorActual = {
-          id: prest.id,
-          nombre: prest.nombre,
-          especialidad: esp,
-        };
+        prestadorActual = { id: prest.id, nombre: prest.nombre, especialidad: esp };
         sessionStorage.setItem("prestador", JSON.stringify(prestadorActual));
         sessionStorage.setItem("modoPreventivista", "true");
-
-        document
-          .getElementById("selectorPreventivista")
-          .classList.add("hidden");
+        document.getElementById("selectorPreventivista").classList.add("hidden");
         mostrarPortal();
       }
     </script>
 
     <!-- PANTALLA DE LOGIN -->
-    <div
-      id="pantallaLogin"
-      class="hidden flex-grow flex items-center justify-center py-10"
-    >
+    <div id="pantallaLogin" class="hidden flex-grow flex items-center justify-center py-10">
       <div style="max-width: 440px; width: 100%; padding: 0 16px">
         <div class="bg-white rounded-xl shadow-lg p-8 border border-blue-100">
           <h2 class="text-lg font-bold text-blue-800 mb-6 flex items-center">
             <i class="fas fa-lock mr-2 text-blue-400"></i> Acceso al sistema
           </h2>
           <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 mb-1"
-              >Usuario</label
-            >
-            <input
-              type="text"
-              id="loginUsuario"
+            <label class="block text-sm font-medium text-gray-700 mb-1">Usuario</label>
+            <input type="text" id="loginUsuario"
               class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-              placeholder="Ingrese su usuario"
-            />
+              placeholder="Ingrese su usuario" />
           </div>
           <div class="mb-6">
-            <label class="block text-sm font-medium text-gray-700 mb-1"
-              >Contraseña</label
-            >
-            <input
-              type="password"
-              id="loginPassword"
+            <label class="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+            <input type="password" id="loginPassword"
               class="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-              placeholder="Ingrese su contraseña"
-            />
+              placeholder="Ingrese su contraseña" />
           </div>
-          <button
-            onclick="hacerLogin()"
-            class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold transition text-sm"
-          >
+          <button onclick="hacerLogin()"
+            class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold transition text-sm">
             <i class="fas fa-sign-in-alt mr-2"></i> Ingresar
           </button>
-          <div
-            id="loginError"
-            class="hidden text-red-500 text-sm text-center mt-3"
-          ></div>
+          <div id="loginError" class="hidden text-red-500 text-sm text-center mt-3"></div>
         </div>
       </div>
     </div>
-          <!-- TAB BUSCAR -->
+
+    <!-- PORTAL PRINCIPAL -->
+    <div id="portalPrincipal" class="hidden flex-grow">
+      <main class="container mx-auto px-4 py-8" style="max-width: 860px">
+
+        <!-- TAB BUSCAR (visible por defecto) -->
         <div id="contenido-buscar">
-          <!-- BÚSQUEDA -->
-          <div
-            class="bg-white rounded-xl shadow p-6 mb-6 border border-blue-100"
-          >
+          <div class="bg-white rounded-xl shadow p-6 mb-6 border border-blue-100">
             <h2 class="font-bold text-blue-800 mb-3 flex items-center">
               <i class="fas fa-search text-blue-500 mr-2"></i>Buscar Afiliado
             </h2>
             <div class="flex gap-2">
-              <input
-                type="text"
-                id="dniSearch"
-                maxlength="9"
+              <input type="text" id="dniSearch" maxlength="9"
                 class="flex-grow border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                placeholder="Ingrese DNI del afiliado"
-              />
-              <button
-                onclick="buscarPracticas()"
-                class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-bold transition text-sm"
-              >
+                placeholder="Ingrese DNI del afiliado" />
+              <button onclick="buscarPracticas()"
+                class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-bold transition text-sm">
                 BUSCAR
               </button>
             </div>
           </div>
 
-          <!-- LOADING -->
           <div id="loading" class="hidden text-center py-6">
             <i class="fas fa-spinner fa-spin fa-2x text-blue-600"></i>
             <p class="text-gray-500 mt-2 text-sm">Buscando prácticas...</p>
           </div>
 
-          <!-- INFO AFILIADO -->
-          <div
-            id="infoAfiliado"
-            class="hidden bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4"
-          >
+          <div id="infoAfiliado" class="hidden bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
             <p class="font-bold text-blue-900" id="nombreAfiliado"></p>
             <p class="text-sm text-blue-700" id="especialidadVista"></p>
           </div>
 
-          <!-- MODO CARGA LAB -->
-          <div
-            id="modoCargaLab"
-            class="hidden mb-4 bg-blue-50 border border-blue-200 rounded-xl p-4"
-          >
+          <div id="modoCargaLab" class="hidden mb-4 bg-blue-50 border border-blue-200 rounded-xl p-4">
             <p class="font-bold text-blue-800 mb-3 text-sm">
-              <i class="fas fa-flask mr-2"></i>¿Cómo querés cargar los
-              resultados?
+              <i class="fas fa-flask mr-2"></i>¿Cómo querés cargar los resultados?
             </p>
             <div class="flex gap-3">
-              <button
-                onclick="modoCargaIndividual()"
-                class="flex-1 bg-white border-2 border-blue-600 text-blue-600 py-3 rounded-lg font-bold hover:bg-blue-50 transition text-sm"
-              >
+              <button onclick="modoCargaIndividual()"
+                class="flex-1 bg-white border-2 border-blue-600 text-blue-600 py-3 rounded-lg font-bold hover:bg-blue-50 transition text-sm">
                 <i class="fas fa-list mr-2"></i>Individual
                 <p class="text-xs font-normal mt-1">Una práctica a la vez</p>
               </button>
-              <button
-                onclick="modoCargaPDF()"
-                class="flex-1 bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition text-sm"
-              >
+              <button onclick="modoCargaPDF()"
+                class="flex-1 bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition text-sm">
                 <i class="fas fa-file-pdf mr-2"></i>Cargar PDF completo
-                <p class="text-xs font-normal mt-1">
-                  Lee todas las prácticas automáticamente
-                </p>
+                <p class="text-xs font-normal mt-1">Lee todas las prácticas automáticamente</p>
               </button>
             </div>
           </div>
@@ -331,17 +232,10 @@
             <h2 class="font-bold text-blue-800 mb-4 flex items-center">
               <i class="fas fa-list-check text-blue-500 mr-2"></i>Mi Actividad
             </h2>
-
-            <!-- Filtro mes -->
             <div class="flex gap-3 mb-4 items-end">
               <div>
-                <label class="text-xs font-bold text-gray-600 block mb-1"
-                  >Mes</label
-                >
-                <select
-                  id="actividadMes"
-                  class="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                >
+                <label class="text-xs font-bold text-gray-600 block mb-1">Mes</label>
+                <select id="actividadMes" class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                   <option value="1">Enero</option>
                   <option value="2">Febrero</option>
                   <option value="3">Marzo</option>
@@ -357,186 +251,99 @@
                 </select>
               </div>
               <div>
-                <label class="text-xs font-bold text-gray-600 block mb-1"
-                  >Año</label
-                >
-                <input
-                  type="number"
-                  id="actividadAnio"
-                  value="2026"
-                  class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-24"
-                />
+                <label class="text-xs font-bold text-gray-600 block mb-1">Año</label>
+                <input type="number" id="actividadAnio" value="2026"
+                  class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-24" />
               </div>
-              <button
-                onclick="cargarActividad()"
-                class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700"
-              >
+              <button onclick="cargarActividad()"
+                class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700">
                 <i class="fas fa-search mr-1"></i> Ver
               </button>
             </div>
-
-            <!-- Resumen -->
             <div class="grid grid-cols-2 gap-3 mb-4">
-              <div
-                class="bg-green-50 border border-green-200 rounded-lg p-3 text-center"
-              >
-                <p
-                  class="text-2xl font-bold text-green-700"
-                  id="actividadCargadas"
-                >
-                  -
-                </p>
+              <div class="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+                <p class="text-2xl font-bold text-green-700" id="actividadCargadas">-</p>
                 <p class="text-xs text-green-600">Prácticas cargadas</p>
               </div>
-              <div
-                class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-center"
-              >
-                <p
-                  class="text-2xl font-bold text-yellow-700"
-                  id="actividadPendientes"
-                >
-                  -
-                </p>
+              <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-center">
+                <p class="text-2xl font-bold text-yellow-700" id="actividadPendientes">-</p>
                 <p class="text-xs text-yellow-600">Pendientes de carga</p>
               </div>
             </div>
-
             <div id="listaActividad">
-              <p class="text-center text-gray-400 py-8">
-                Seleccioná mes y año y hacé clic en Ver.
-              </p>
+              <p class="text-center text-gray-400 py-8">Seleccioná mes y año y hacé clic en Ver.</p>
             </div>
           </div>
         </div>
+
       </main>
     </div>
 
     <!-- MODAL CARGA INDIVIDUAL -->
-    <div
-      id="modalCarga"
-      class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
-    >
+    <div id="modalCarga" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div class="bg-white rounded-xl p-6 max-w-md w-full shadow-xl">
         <h3 id="modalTitulo" class="text-lg font-bold mb-4 text-blue-800"></h3>
         <div class="space-y-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1"
-              >Resultado</label
-            >
-            <input
-              type="text"
-              id="resultadoValor"
+            <label class="block text-sm font-medium text-gray-700 mb-1">Resultado</label>
+            <input type="text" id="resultadoValor"
               class="w-full border border-gray-300 rounded-lg p-2 outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              placeholder="Ej: Normal / 110 mg/dl"
-            />
+              placeholder="Ej: Normal / 110 mg/dl" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1"
-              >Archivo PDF (opcional)</label
-            >
-            <input
-              type="file"
-              id="archivoPdf"
-              accept="application/pdf"
-              class="w-full text-sm"
-            />
+            <label class="block text-sm font-medium text-gray-700 mb-1">Archivo PDF (opcional)</label>
+            <input type="file" id="archivoPdf" accept="application/pdf" class="w-full text-sm" />
             <div class="flex items-center gap-2 my-2">
               <div class="flex-grow border-t border-gray-200"></div>
               <span class="text-xs text-gray-400 font-bold">O</span>
               <div class="flex-grow border-t border-gray-200"></div>
             </div>
-            <input
-              type="text"
-              id="linkDrivePractica"
+            <input type="text" id="linkDrivePractica"
               class="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Pegá el link de Google Drive del PDF"
-            />
+              placeholder="Pegá el link de Google Drive del PDF" />
           </div>
         </div>
         <div class="flex justify-end gap-2 mt-6">
-          <button
-            onclick="cerrarModal()"
-            class="px-4 py-2 text-gray-500 hover:text-gray-700 text-sm"
-          >
-            Cancelar
-          </button>
-          <button
-            id="btnGuardarPractica"
-            class="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 text-sm"
-          >
-            GUARDAR
-          </button>
+          <button onclick="cerrarModal()" class="px-4 py-2 text-gray-500 hover:text-gray-700 text-sm">Cancelar</button>
+          <button id="btnGuardarPractica" class="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 text-sm">GUARDAR</button>
         </div>
       </div>
     </div>
 
     <!-- MODAL FACTURACIÓN -->
-    <div
-      id="modalFacturacion"
-      class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
-    >
+    <div id="modalFacturacion" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div class="bg-white rounded-xl p-6 max-w-2xl w-full shadow-xl">
         <div class="flex justify-between items-center mb-4">
           <h3 class="text-lg font-bold text-blue-800">
-            <i class="fas fa-file-invoice-dollar mr-2"></i>Planilla de
-            Facturación
+            <i class="fas fa-file-invoice-dollar mr-2"></i>Planilla de Facturación
           </h3>
-          <button
-            onclick="cerrarModalFacturacion()"
-            class="text-gray-400 hover:text-gray-600"
-          >
+          <button onclick="cerrarModalFacturacion()" class="text-gray-400 hover:text-gray-600">
             <i class="fas fa-times fa-lg"></i>
           </button>
         </div>
         <div class="flex gap-3 mb-4">
           <div class="flex-1">
-            <label class="block text-sm font-medium text-gray-700 mb-1"
-              >Mes</label
-            >
-            <select
-              id="mesFact"
-              class="w-full border border-gray-300 rounded-lg p-2 text-sm"
-            >
-              <option value="1">Enero</option>
-              <option value="2">Febrero</option>
-              <option value="3">Marzo</option>
-              <option value="4">Abril</option>
-              <option value="5">Mayo</option>
-              <option value="6">Junio</option>
-              <option value="7">Julio</option>
-              <option value="8">Agosto</option>
-              <option value="9">Septiembre</option>
-              <option value="10">Octubre</option>
-              <option value="11">Noviembre</option>
-              <option value="12">Diciembre</option>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Mes</label>
+            <select id="mesFact" class="w-full border border-gray-300 rounded-lg p-2 text-sm">
+              <option value="1">Enero</option><option value="2">Febrero</option>
+              <option value="3">Marzo</option><option value="4">Abril</option>
+              <option value="5">Mayo</option><option value="6">Junio</option>
+              <option value="7">Julio</option><option value="8">Agosto</option>
+              <option value="9">Septiembre</option><option value="10">Octubre</option>
+              <option value="11">Noviembre</option><option value="12">Diciembre</option>
             </select>
           </div>
           <div class="flex-1">
-            <label class="block text-sm font-medium text-gray-700 mb-1"
-              >Año</label
-            >
-            <input
-              type="number"
-              id="anioFact"
-              value="2026"
-              class="w-full border border-gray-300 rounded-lg p-2 text-sm"
-            />
+            <label class="block text-sm font-medium text-gray-700 mb-1">Año</label>
+            <input type="number" id="anioFact" value="2026" class="w-full border border-gray-300 rounded-lg p-2 text-sm" />
           </div>
           <div class="flex items-end">
-            <button
-              onclick="generarFacturacion()"
-              class="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700 text-sm"
-            >
-              BUSCAR
-            </button>
+            <button onclick="generarFacturacion()" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700 text-sm">BUSCAR</button>
           </div>
         </div>
         <div id="tablaFacturacion" class="overflow-x-auto"></div>
         <div id="btnDescargarExcel" class="hidden text-center mt-4">
-          <button
-            onclick="descargarExcel()"
-            class="bg-green-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-green-700 text-sm"
-          >
+          <button onclick="descargarExcel()" class="bg-green-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-green-700 text-sm">
             <i class="fas fa-file-excel mr-2"></i> Descargar Excel
           </button>
         </div>
@@ -544,57 +351,30 @@
     </div>
 
     <!-- MODAL PDF LABORATORIO -->
-    <div
-      id="modalPDFLab"
-      class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
-    >
+    <div id="modalPDFLab" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div class="bg-white rounded-xl p-6 max-w-2xl w-full shadow-xl">
         <h3 class="text-lg font-bold mb-4 text-blue-800">
           <i class="fas fa-flask mr-2"></i>Carga de Resultados de Laboratorio
         </h3>
-        <div
-          class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-800"
-        >
-          <p class="font-bold mb-1">
-            <i class="fas fa-info-circle mr-1"></i>Instrucciones:
-          </p>
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-800">
+          <p class="font-bold mb-1"><i class="fas fa-info-circle mr-1"></i>Instrucciones:</p>
           <ol class="list-decimal pl-4 space-y-1">
             <li>Subí el PDF del informe de laboratorio</li>
-            <li>
-              Si el paciente tiene más de un informe (ej: Mega + Hospital
-              Italiano), hacé click en <strong>+ Agregar otro informe</strong> y
-              subí el segundo PDF
-            </li>
-            <li>
-              Cuando termines hacé click en <strong>PROCESAR TODO</strong> — una
-              inteligencia artificial va a leer los valores automáticamente
-            </li>
+            <li>Si el paciente tiene más de un informe, hacé click en <strong>+ Agregar otro informe</strong></li>
+            <li>Cuando termines hacé click en <strong>PROCESAR TODO</strong></li>
             <li>Revisá los valores antes de confirmar</li>
           </ol>
         </div>
         <div id="contenedorInformes" class="space-y-3"></div>
-        <button
-          onclick="agregarInforme()"
-          class="mt-3 w-full border-2 border-dashed border-blue-300 text-blue-600 py-2 rounded-lg hover:bg-blue-50 text-sm font-bold"
-        >
+        <button onclick="agregarInforme()"
+          class="mt-3 w-full border-2 border-dashed border-blue-300 text-blue-600 py-2 rounded-lg hover:bg-blue-50 text-sm font-bold">
           <i class="fas fa-plus mr-2"></i>Agregar otro informe
         </button>
-        <div
-          id="pdfResultado"
-          class="hidden mt-4 max-h-64 overflow-y-auto"
-        ></div>
+        <div id="pdfResultado" class="hidden mt-4 max-h-64 overflow-y-auto"></div>
         <div class="flex justify-end gap-2 mt-4">
-          <button
-            onclick="cerrarModalPDFLab()"
-            class="px-4 py-2 text-gray-500 hover:text-gray-700 text-sm"
-          >
-            Cancelar
-          </button>
-          <button
-            onclick="procesarTodosLosInformes()"
-            id="btnProcesarPDF"
-            class="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 text-sm"
-          >
+          <button onclick="cerrarModalPDFLab()" class="px-4 py-2 text-gray-500 hover:text-gray-700 text-sm">Cancelar</button>
+          <button onclick="procesarTodosLosInformes()" id="btnProcesarPDF"
+            class="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 text-sm">
             <i class="fas fa-magic mr-2"></i>PROCESAR TODO
           </button>
         </div>
