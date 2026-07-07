@@ -57,6 +57,12 @@
             </div>
           </div>
           <div id="headerAcciones" class="hidden flex items-center gap-3">
+              <span id="headerNombre" class="text-sm text-blue-200 hidden md:block"></span>
+              <button onclick="mostrarTabPrestador('actividad')"
+                  class="bg-blue-500 hover:bg-blue-400 text-white px-4 py-2 rounded-lg text-sm font-bold transition">
+                  <i class="fas fa-list-check mr-1"></i> Mi Actividad
+              </button>
+          <div id="headerAcciones" class="hidden flex items-center gap-3">
             <span
               id="headerNombre"
               class="text-sm text-blue-200 hidden md:block"
@@ -246,30 +252,7 @@
         </div>
       </div>
     </div>
-    <!-- PORTAL PRINCIPAL -->
-    <div id="portalPrincipal" class="hidden flex-grow">
-      <main class="container mx-auto px-4 py-8" style="max-width: 860px">
-        <!-- TABS -->
-        <div class="bg-white shadow-sm border-b mb-6 rounded-t-xl">
-          <div class="flex">
-            <button
-              onclick="mostrarTabPrestador('buscar')"
-              id="tab-buscar"
-              class="px-6 py-3 text-sm font-bold border-b-2 border-blue-500 text-blue-600"
-            >
-              <i class="fas fa-search mr-1"></i> Buscar Afiliado
-            </button>
-            <button
-              onclick="mostrarTabPrestador('actividad')"
-              id="tab-actividad"
-              class="px-6 py-3 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700"
-            >
-              <i class="fas fa-list-check mr-1"></i> Mi Actividad
-            </button>
-          </div>
-        </div>
-
-        <!-- TAB BUSCAR -->
+          <!-- TAB BUSCAR -->
         <div id="contenido-buscar">
           <!-- BÚSQUEDA -->
           <div
