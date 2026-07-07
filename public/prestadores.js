@@ -1332,3 +1332,75 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "Enter") buscarPracticas();
   });
 });
+// ==========================================
+// MI ACTIVIDAD
+// ==========================================
+function mostrarTabPrestador(tab) {
+    ['buscar', 'actividad'].forEach(t => {
+        document.getElementById(`contenido-${t}`).classList.add('hidden');
+        document.getElementById(`tab-${t}`).className =
+            'px-6 py-3 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700';
+    });
+    document.getElementById(`contenido-${tab}`).classList.remove('hidden');
+    document.getElementById(`tab-${tab}`).className =
+        'px-6 py-3 text-sm font-bold border-b-2 border-blue-500 text-blue-600';
+}
+
+async function cargarActividad() {
+    const mes = document.getElementById('actividadMes').value;
+    const anio = document.getElementById('actividadAnio').value;
+    const lista = document.getElementById('listaActividad');
+
+    lista.innerHTML = '<div class="text-center py-8 text-gray-400"><i class="fas fa-spinner fa-spin text-2xl mb-2"></i><p>Cargando...</p></div>';
+
+    try {
+        const res = await fetch(`/api/mi-actividad/${mes}/${anio}?nombre=${encodeURIComponent(prestadorActual.nombre)}`);
+        const data = await res.json();
+
+        document.getElementById('actividadCargadas').textContent = data.cargadas?.length || 0;
+        document.getElementById('actividadPendientes').textContent = data.pendientes?.length || 0;
+
+        lista.innerHTML = '';
+
+        if (data.cargadas?.length > 0) {
+            lista.innerHTML += `<h3 class="font-bold text-green-700 text-sm uppercase mb-2 mt-2">
+                <i class="fas fa-check-circle mr-1"></i> Cargadas este mes (${data.cargadas.length})</h3>`;
+            data.cargadas.forEach(p => {
+                lista.innerHTML += `
+                    <div class="bg-green-50 border-l-4 border-green-500 rounded-lg p-3 mb-2 flex justify-between items-center">
+                        <div>
+                            <p class="font-bold text-gray-800 text-sm">${p.nombre_completo || p.dni}</p>
+                            <p class="text-xs text-gray-500">DNI: ${p.dni} — ${p.descripcion_practica}</p>
+                            <p class="text-xs text-gray-400">${p.fecha_carga ? new Date(p.fecha_carga).toLocaleDateString('es-AR') : 'S/F'}</p>
+                        </div>
+                        <span class="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full font-bold">✓ REALIZADA</span>
+                    </div>`;
+            });
+        }
+
+        if (data.pendientes?.length > 0) {
+            lista.innerHTML += `<h3 class="font-bold text-yellow-700 text-sm uppercase mb-2 mt-4">
+                <i class="fas fa-clock mr-1"></i> Pendientes de carga (${data.pendientes.length})</h3>`;
+            data.pendientes.forEach(p => {
+                lista.innerHTML += `
+                    <div class="bg-yellow-50 border-l-4 border-yellow-500 rounded-lg p-3 mb-2 flex justify-between items-center">
+                        <div>
+                            <p class="font-bold text-gray-800 text-sm">${p.nombre_completo || p.dni}</p>
+                            <p class="text-xs text-gray-500">DNI: ${p.dni} — ${p.descripcion_practica}</p>
+                        </div>
+                        <button onclick="document.getElementById('dniSearch').value='${p.dni}'; mostrarTabPrestador('buscar'); buscarPracticas();"
+                            class="bg-blue-600 text-white text-xs px-3 py-1 rounded-lg font-bold hover:bg-blue-700">
+                            Cargar
+                        </button>
+                    </div>`;
+            });
+        }
+
+        if (!data.cargadas?.length && !data.pendientes?.length) {
+            lista.innerHTML = '<p class="text-center text-gray-400 py-8">No hay actividad para este período.</p>';
+        }
+
+    } catch (e) {
+        lista.innerHTML = '<p class="text-red-500 text-center">Error al cargar actividad.</p>';
+    }
+}

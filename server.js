@@ -91,10 +91,9 @@ app.post("/loginPrestador", async (req, res) => {
   try {
     const { usuario, password } = req.body;
     const { data, error } = await supabase
-      .from("prestadores")
+      .from("prestadores_institucionales")
       .select("*")
       .eq("usuario", usuario)
-      .eq("password", password)
       .eq("activo", true)
       .single();
 
@@ -821,6 +820,41 @@ app.post("/verificarPracticasDuplicadas", async (req, res) => {
     res.json({ success: true, duplicadas });
   } catch (e) {
     res.status(500).json({ success: false, duplicadas: [] });
+  }
+});
+
+app.get("/api/mi-actividad/:mes/:anio", async (req, res) => {
+  const { mes, anio } = req.params;
+  const nombrePrestador = req.query.nombre;
+
+  const fechaInicio = `${anio}-${mes.toString().padStart(2, "0")}-01`;
+  const fechaFin = new Date(anio, mes, 0).toISOString().split("T")[0];
+
+  try {
+    const { data: cargadas } = await supabase
+      .from("practicas_autorizadas")
+      .select(
+        "dni, nombre_completo, descripcion_practica, fecha_carga, nombre_prestador",
+      )
+      .eq("estado", "REALIZADA")
+      .eq("nombre_prestador", nombrePrestador)
+      .gte("fecha_carga", fechaInicio)
+      .lte("fecha_carga", fechaFin)
+      .order("fecha_carga", { ascending: false });
+
+    const { data: pendientes } = await supabase
+      .from("practicas_autorizadas")
+      .select("dni, nombre_completo, descripcion_practica")
+      .eq("estado", "AUTORIZADA")
+      .eq("nombre_prestador", nombrePrestador);
+
+    res.json({
+      success: true,
+      cargadas: cargadas || [],
+      pendientes: pendientes || [],
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
   }
 });
 
