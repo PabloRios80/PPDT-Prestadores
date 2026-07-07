@@ -1336,14 +1336,9 @@ document.addEventListener("DOMContentLoaded", () => {
 // MI ACTIVIDAD
 // ==========================================
 function mostrarTabPrestador(tab) {
-  ["buscar", "actividad"].forEach((t) => {
-    document.getElementById(`contenido-${t}`).classList.add("hidden");
-    document.getElementById(`tab-${t}`).className =
-      "px-6 py-3 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700";
-  });
-  document.getElementById(`contenido-${tab}`).classList.remove("hidden");
-  document.getElementById(`tab-${tab}`).className =
-    "px-6 py-3 text-sm font-bold border-b-2 border-blue-500 text-blue-600";
+    document.getElementById('contenido-buscar').classList.add('hidden');
+    document.getElementById('contenido-actividad').classList.add('hidden');
+    document.getElementById(`contenido-${tab}`).classList.remove('hidden');
 }
 
 async function cargarActividad() {
