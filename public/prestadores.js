@@ -393,6 +393,27 @@ async function guardarPractica() {
   if (!valor && !hayArchivo && !linkDrive)
     return alert("Ingrese un resultado o adjunte un PDF.");
 
+  // Verificar si ya fue cargada
+  try {
+    const resCheck = await fetch("/verificarPracticasDuplicadas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dni: dni,
+        practicas: [{ descripcion: practicaActual.descripcion }],
+      }),
+    });
+    const checkData = await resCheck.json();
+    if (checkData.duplicadas && checkData.duplicadas.length > 0) {
+      const confirmar = confirm(
+        `⚠️ La práctica "${practicaActual.descripcion}" ya fue cargada para este afiliado. ¿Querés cargarla de nuevo y pisar el resultado anterior?`,
+      );
+      if (!confirmar) return;
+    }
+  } catch (e) {
+    console.warn("No se pudo verificar duplicados:", e.message);
+  }
+
   let archivoBase64 = null;
   if (hayArchivo) {
     try {
@@ -430,7 +451,26 @@ async function guardarPractica() {
     idPrestador: prestadorActual.id,
     nombrePrestador: prestadorActual.nombre,
   };
-
+  // Verificar si ya fue cargada
+  try {
+    const resCheck = await fetch("/verificarPracticasDuplicadas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dni: dni,
+        practicas: [{ descripcion: practicaActual.descripcion }],
+      }),
+    });
+    const checkData = await resCheck.json();
+    if (checkData.duplicadas && checkData.duplicadas.length > 0) {
+      const confirmar = confirm(
+        `⚠️ La práctica "${practicaActual.descripcion}" ya fue cargada para este afiliado. ¿Querés cargarla de nuevo y pisar el resultado anterior?`,
+      );
+      if (!confirmar) return;
+    }
+  } catch (e) {
+    console.warn("No se pudo verificar duplicados:", e.message);
+  }
   try {
     const response = await fetch("/savePracticeResult", {
       method: "POST",
@@ -1336,9 +1376,9 @@ document.addEventListener("DOMContentLoaded", () => {
 // MI ACTIVIDAD
 // ==========================================
 function mostrarTabPrestador(tab) {
-    document.getElementById('contenido-buscar').classList.add('hidden');
-    document.getElementById('contenido-actividad').classList.add('hidden');
-    document.getElementById(`contenido-${tab}`).classList.remove('hidden');
+  document.getElementById("contenido-buscar").classList.add("hidden");
+  document.getElementById("contenido-actividad").classList.add("hidden");
+  document.getElementById(`contenido-${tab}`).classList.remove("hidden");
 }
 
 async function cargarActividad() {
