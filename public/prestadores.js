@@ -229,7 +229,7 @@ async function buscarPracticas() {
           lista.appendChild(div);
         });
       }
-
+      const badge = document.createElement("span");
       // ── BOTÓN AGREGAR PRÁCTICA — siempre visible para laboratorio ──
       if (prestadorActual.especialidad === "Laboratorio Bioquimico") {
         const btnAgregar = document.createElement("button");

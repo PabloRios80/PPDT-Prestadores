@@ -857,7 +857,18 @@ app.get("/api/mi-actividad/:mes/:anio", async (req, res) => {
     res.status(500).json({ success: false, message: e.message });
   }
 });
-
+app.delete('/eliminarPractica/:id', async (req, res) => {
+    try {
+        const { error } = await supabase
+            .from('practicas_autorizadas')
+            .delete()
+            .eq('id', req.params.id);
+        if (error) throw error;
+        res.json({ success: true });
+    } catch(e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
 app.listen(PORT, () =>
   console.log(`Portal Prestadores corriendo en http://localhost:${PORT}`),
 );
