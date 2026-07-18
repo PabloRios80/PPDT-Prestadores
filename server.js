@@ -857,22 +857,30 @@ app.get("/api/mi-actividad/:mes/:anio", async (req, res) => {
     res.status(500).json({ success: false, message: e.message });
   }
 });
-app.delete('/eliminarPractica/:id', async (req, res) => {
-    try {
-        const { error } = await supabase
-            .from('practicas_autorizadas')
-            .delete()
-            .eq('id', req.params.id);
-        if (error) throw error;
-        res.json({ success: true });
-    } catch(e) {
-        res.status(500).json({ success: false, message: e.message });
-    }
+app.delete("/eliminarPractica/:id", async (req, res) => {
+  try {
+    const { error } = await supabase
+      .from("practicas_autorizadas")
+      .delete()
+      .eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
   const {
-    dni, modulo, psa, hpv, somf, resultado_somf,
-    hemoglobina, orina, idPrestador, nombrePrestador
+    dni,
+    modulo,
+    psa,
+    hpv,
+    somf,
+    resultado_somf,
+    hemoglobina,
+    orina,
+    idPrestador,
+    nombrePrestador,
   } = req.body;
 
   const hoy = new Date().toISOString().split("T")[0];
@@ -923,7 +931,9 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
 
       await supabase.from("practicas_autorizadas").insert({
         dni,
-        nombre_completo: afiliado ? `${afiliado.apellido} ${afiliado.nombre}` : null,
+        nombre_completo: afiliado
+          ? `${afiliado.apellido} ${afiliado.nombre}`
+          : null,
         descripcion_practica: "Práctica bioquímica",
         estado: "REALIZADA",
         fecha_autorizacion: hoy,
@@ -938,7 +948,50 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
     res.status(500).json({ success: false, message: e.message });
   }
 });
+const CATALOGO_SEGUIMIENTO_BIO = [
+  "antigeno prostatico especifico total - PSA",
+  "colesterol total",
+  "creatinina",
+  "creatinina, formula filtrado glomerular",
+  "formula filtrado glomerular",
+  "glucemia en ayunas",
+  "HDL/colesterol",
+  "hemoglobina glicosilada",
+  "LDL/colesterol",
+  "microalbuminuria",
+  "RAC - creatinina orina",
+  "RAC - Relación Albúmina/Creatinina",
+  "sangre oculta en materia fecal - SOMF",
+  "trigliceridos",
+];
 
+app.get("/api/bioquimico/practicas-seguimiento/:dni", async (req, res) => {
+  try {
+    const { data } = await supabase
+      .from("practicas_autorizadas")
+      .select("id, descripcion_practica, indicacion_entregada")
+      .eq("dni", req.params.dni)
+      .eq("estado", "AUTORIZADA")
+      .in("descripcion_practica", CATALOGO_SEGUIMIENTO_BIO)
+      .order("descripcion_practica");
+    res.json({ practicas: data || [] });
+  } catch (e) {
+    res.status(500).json({ practicas: [] });
+  }
+});
+
+app.patch("/api/indicacion-practica/:id", async (req, res) => {
+  try {
+    const { error } = await supabase
+      .from("practicas_autorizadas")
+      .update(req.body)
+      .eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false });
+  }
+});
 app.listen(PORT, () =>
   console.log(`Portal Prestadores corriendo en http://localhost:${PORT}`),
 );

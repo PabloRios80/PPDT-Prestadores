@@ -397,16 +397,23 @@ function mostrarChecklistExtraccionBio(dni) {
       <label class="flex items-center gap-2 text-sm">
         <input type="checkbox" id="bio_orina_input" class="w-4 h-4"> Orina
       </label>
+      <button id="btn-seguimiento-bio"
+        class="w-full bg-indigo-600 text-white py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 mt-2">
+        <i class="fas fa-list-check mr-2"></i>Seguimiento (otras prácticas de laboratorio)
+      </button>
       <button id="btn-guardar-extraccion-bio"
         class="w-full bg-purple-600 text-white py-2 rounded-lg text-sm font-bold hover:bg-purple-700 mt-2">
         <i class="fas fa-save mr-2"></i>Guardar y facturar práctica bioquímica
       </button>
       <p id="msg-extraccion-bio" class="text-xs mt-2"></p>
     </div>`;
-
   document
     .getElementById("btn-guardar-extraccion-bio")
     .addEventListener("click", () => guardarExtraccionBio(dni));
+
+  document
+    .getElementById("btn-seguimiento-bio")
+    .addEventListener("click", () => abrirModalSeguimientoBio(dni));
 }
 
 async function guardarExtraccionBio(dni) {
@@ -448,6 +455,75 @@ async function guardarExtraccionBio(dni) {
     btn.disabled = false;
     btn.innerHTML =
       '<i class="fas fa-save mr-2"></i>Guardar y facturar práctica bioquímica';
+  }
+}
+async function abrirModalSeguimientoBio(dni) {
+  document.getElementById("modal-seguimiento-bio")?.remove();
+
+  const modal = document.createElement("div");
+  modal.id = "modal-seguimiento-bio";
+  modal.style.cssText =
+    "position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; display:flex; align-items:center; justify-content:center; padding:20px;";
+  modal.innerHTML = `
+    <div style="background:white; border-radius:12px; padding:24px; max-width:480px; width:100%; max-height:80vh; overflow-y:auto;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h3 style="color:#4338ca; font-weight:700; margin:0;">Seguimiento — Prácticas de laboratorio</h3>
+        <button id="btn-cerrar-modal-seguimiento" style="background:none; border:none; font-size:20px; cursor:pointer; color:#666;">✕</button>
+      </div>
+      <div id="lista-seguimiento-bio"><p class="text-center text-gray-400 py-4">Cargando...</p></div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  document
+    .getElementById("btn-cerrar-modal-seguimiento")
+    .addEventListener("click", () => modal.remove());
+
+  await cargarSeguimientoBio(dni);
+}
+
+async function cargarSeguimientoBio(dni) {
+  const lista = document.getElementById("lista-seguimiento-bio");
+  try {
+    const res = await fetch(`/api/bioquimico/practicas-seguimiento/${dni}`);
+    const data = await res.json();
+    const practicas = data.practicas || [];
+
+    if (practicas.length === 0) {
+      lista.innerHTML =
+        '<p style="color:#999; text-align:center; font-size:13px;">No hay prácticas de seguimiento autorizadas para este paciente.</p>';
+      return;
+    }
+
+    lista.innerHTML = practicas
+      .map(
+        (p) => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px solid ${p.indicacion_entregada ? "#a5b4fc" : "#e5e7eb"}; border-radius:8px; margin-bottom:8px; background:${p.indicacion_entregada ? "#eef2ff" : "#f9fafb"};">
+          <span style="font-size:13px; color:${p.indicacion_entregada ? "#4338ca" : "#374151"}; font-weight:${p.indicacion_entregada ? "700" : "400"};">
+            ${p.descripcion_practica}
+          </span>
+          <button class="btn-marcar-seguimiento" data-id="${p.id}" data-valor="${!p.indicacion_entregada}" data-dni="${dni}"
+            style="font-size:12px; padding:5px 12px; border-radius:20px; font-weight:700; border:none; cursor:pointer; background:${p.indicacion_entregada ? "#c7d2fe" : "#e5e7eb"}; color:${p.indicacion_entregada ? "#4338ca" : "#6b7280"};">
+            ${p.indicacion_entregada ? "✓ Extraída" : "Marcar"}
+          </button>
+        </div>`,
+      )
+      .join("");
+
+    lista.querySelectorAll(".btn-marcar-seguimiento").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await fetch(`/api/indicacion-practica/${btn.dataset.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            indicacion_entregada: btn.dataset.valor === "true",
+          }),
+        });
+        cargarSeguimientoBio(btn.dataset.dni);
+      });
+    });
+  } catch (e) {
+    lista.innerHTML =
+      '<p style="color:red; text-align:center; font-size:13px;">Error al cargar.</p>';
   }
 }
 // ==========================================
