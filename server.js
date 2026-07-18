@@ -869,6 +869,76 @@ app.delete('/eliminarPractica/:id', async (req, res) => {
         res.status(500).json({ success: false, message: e.message });
     }
 });
+app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
+  const {
+    dni, modulo, psa, hpv, somf, resultado_somf,
+    hemoglobina, orina, idPrestador, nombrePrestador
+  } = req.body;
+
+  const hoy = new Date().toISOString().split("T")[0];
+
+  try {
+    // 1. Actualizar tablero_dia (solo informativo)
+    const { data: registro } = await supabase
+      .from("tablero_dia")
+      .select("id")
+      .eq("dni", dni)
+      .gte("fecha", hoy)
+      .lte("fecha", hoy)
+      .maybeSingle();
+
+    if (registro) {
+      await supabase
+        .from("tablero_dia")
+        .update({
+          bio_paso: true,
+          bio_modulo: modulo || null,
+          bio_psa: !!psa,
+          bio_hpv: !!hpv,
+          bio_somf: !!somf,
+          bio_resultado_somf: resultado_somf || null,
+          bio_hemoglobina: !!hemoglobina,
+          bio_orina: !!orina,
+          bio_cargado_analisis: true,
+        })
+        .eq("id", registro.id);
+    }
+
+    // 2. Facturar "Práctica bioquímica" (guard anti-duplicado del día)
+    const { data: yaExiste } = await supabase
+      .from("practicas_autorizadas")
+      .select("id")
+      .eq("dni", dni)
+      .eq("descripcion_practica", "Práctica bioquímica")
+      .eq("id_prestador", idPrestador?.toString())
+      .gte("fecha_carga", `${hoy}T00:00:00`)
+      .maybeSingle();
+
+    if (!yaExiste) {
+      const { data: afiliado } = await supabase
+        .from("afiliados")
+        .select("nombre, apellido")
+        .eq("dni", dni)
+        .single();
+
+      await supabase.from("practicas_autorizadas").insert({
+        dni,
+        nombre_completo: afiliado ? `${afiliado.apellido} ${afiliado.nombre}` : null,
+        descripcion_practica: "Práctica bioquímica",
+        estado: "REALIZADA",
+        fecha_autorizacion: hoy,
+        fecha_carga: new Date().toISOString(),
+        id_prestador: idPrestador?.toString(),
+        nombre_prestador: nombrePrestador,
+      });
+    }
+
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
 app.listen(PORT, () =>
   console.log(`Portal Prestadores corriendo en http://localhost:${PORT}`),
 );

@@ -122,12 +122,17 @@ async function buscarPracticas() {
         </div>`;
       return;
     }
-
     document.getElementById("nombreAfiliado").textContent =
       "👤 " + (iaposData.nombre || "DNI: " + dni);
     document.getElementById("especialidadVista").textContent =
       "Prácticas de " + prestadorActual.especialidad;
     infoAfiliado.classList.remove("hidden");
+
+    if (prestadorActual.especialidad === "Laboratorio Bioquimico") {
+      mostrarChecklistExtraccionBio(dni);
+    } else {
+      document.getElementById("seccion-extraccion-bio")?.remove();
+    }
   } catch (e) {
     console.warn("No se pudo verificar IAPOS, continuando...", e.message);
   }
@@ -345,7 +350,106 @@ async function buscarPracticas() {
     alert("Error al conectar con el servidor.");
   }
 }
+function mostrarChecklistExtraccionBio(dni) {
+  const infoAfiliado = document.getElementById("infoAfiliado");
+  let seccion = document.getElementById("seccion-extraccion-bio");
+  if (!seccion) {
+    seccion = document.createElement("div");
+    seccion.id = "seccion-extraccion-bio";
+    seccion.className =
+      "bg-white rounded-xl shadow p-4 mb-4 border-2 border-purple-300";
+    infoAfiliado.insertAdjacentElement("afterend", seccion);
+  }
 
+  seccion.innerHTML = `
+    <h3 class="font-bold text-purple-800 mb-3 text-sm">
+      <i class="fas fa-syringe mr-2"></i>Extracción / Datos del Día Preventivo
+    </h3>
+    <div class="space-y-3">
+      <div>
+        <label class="text-xs font-bold text-gray-600 block mb-1">Módulo</label>
+        <select id="bio_modulo_input" class="w-full border border-gray-300 rounded-lg p-2 text-sm">
+          <option value="">Seleccionar...</option>
+          <option value="adulto">Adulto</option>
+          <option value="niño">Niño</option>
+        </select>
+      </div>
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" id="bio_psa_input" class="w-4 h-4"> PSA
+      </label>
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" id="bio_hpv_input" class="w-4 h-4"> HPV
+      </label>
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" id="bio_somf_input" class="w-4 h-4"> SOMF
+      </label>
+      <div>
+        <label class="text-xs font-bold text-gray-600 block mb-1">Resultado SOMF (si corresponde)</label>
+        <select id="bio_resultado_somf_input" class="w-full border border-gray-300 rounded-lg p-2 text-sm">
+          <option value="">Sin resultado</option>
+          <option value="NEGATIVO">NEGATIVO</option>
+          <option value="POSITIVO">POSITIVO ⚠️</option>
+        </select>
+      </div>
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" id="bio_hemoglobina_input" class="w-4 h-4"> Hemoglobina glicosilada
+      </label>
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" id="bio_orina_input" class="w-4 h-4"> Orina
+      </label>
+      <button id="btn-guardar-extraccion-bio"
+        class="w-full bg-purple-600 text-white py-2 rounded-lg text-sm font-bold hover:bg-purple-700 mt-2">
+        <i class="fas fa-save mr-2"></i>Guardar y facturar práctica bioquímica
+      </button>
+      <p id="msg-extraccion-bio" class="text-xs mt-2"></p>
+    </div>`;
+
+  document
+    .getElementById("btn-guardar-extraccion-bio")
+    .addEventListener("click", () => guardarExtraccionBio(dni));
+}
+
+async function guardarExtraccionBio(dni) {
+  const btn = document.getElementById("btn-guardar-extraccion-bio");
+  const msg = document.getElementById("msg-extraccion-bio");
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Guardando...';
+
+  const payload = {
+    dni,
+    modulo: document.getElementById("bio_modulo_input").value,
+    psa: document.getElementById("bio_psa_input").checked,
+    hpv: document.getElementById("bio_hpv_input").checked,
+    somf: document.getElementById("bio_somf_input").checked,
+    resultado_somf: document.getElementById("bio_resultado_somf_input").value,
+    hemoglobina: document.getElementById("bio_hemoglobina_input").checked,
+    orina: document.getElementById("bio_orina_input").checked,
+    idPrestador: prestadorActual.id,
+    nombrePrestador: prestadorActual.nombre,
+  };
+
+  try {
+    const res = await fetch("/api/bioquimico/registrar-extraccion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.success) {
+      msg.className = "text-xs mt-2 text-green-600 font-bold";
+      msg.textContent = "✅ Guardado correctamente.";
+      btn.innerHTML = '<i class="fas fa-check mr-2"></i>Guardado';
+    } else {
+      throw new Error(data.message || "Error al guardar");
+    }
+  } catch (e) {
+    msg.className = "text-xs mt-2 text-red-600 font-bold";
+    msg.textContent = "Error: " + e.message;
+    btn.disabled = false;
+    btn.innerHTML =
+      '<i class="fas fa-save mr-2"></i>Guardar y facturar práctica bioquímica';
+  }
+}
 // ==========================================
 // MODAL CARGA INDIVIDUAL
 // ==========================================
