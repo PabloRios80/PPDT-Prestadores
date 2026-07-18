@@ -877,8 +877,6 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
     hpv,
     somf,
     resultado_somf,
-    hemoglobina,
-    orina,
     idPrestador,
     nombrePrestador,
   } = req.body;
@@ -886,7 +884,6 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
   const hoy = new Date().toISOString().split("T")[0];
 
   try {
-    // 1. Actualizar tablero_dia (solo informativo)
     const { data: registro } = await supabase
       .from("tablero_dia")
       .select("id")
@@ -905,14 +902,11 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
           bio_hpv: !!hpv,
           bio_somf: !!somf,
           bio_resultado_somf: resultado_somf || null,
-          bio_hemoglobina: !!hemoglobina,
-          bio_orina: !!orina,
           bio_cargado_analisis: true,
         })
         .eq("id", registro.id);
     }
 
-    // 2. Facturar "Práctica bioquímica" (guard anti-duplicado del día)
     const { data: yaExiste } = await supabase
       .from("practicas_autorizadas")
       .select("id")
@@ -965,21 +959,57 @@ const CATALOGO_SEGUIMIENTO_BIO = [
   "trigliceridos",
 ];
 
-app.get("/api/bioquimico/practicas-seguimiento/:dni", async (req, res) => {
+app.get("/api/bioquimico/seguimiento/:dni", async (req, res) => {
+  const { dni } = req.params;
+  const hoy = new Date().toISOString().split("T")[0];
   try {
     const { data } = await supabase
       .from("practicas_autorizadas")
-      .select("id, descripcion_practica, indicacion_entregada")
-      .eq("dni", req.params.dni)
+      .select("descripcion_practica, fecha_autorizacion")
+      .eq("dni", dni)
       .eq("estado", "AUTORIZADA")
       .in("descripcion_practica", CATALOGO_SEGUIMIENTO_BIO)
-      .order("descripcion_practica");
-    res.json({ practicas: data || [] });
+      .gte("fecha_autorizacion", hoy)
+      .lte("fecha_autorizacion", `${hoy}T23:59:59`);
+
+    const marcadasHoy = new Set(
+      (data || []).map((d) => d.descripcion_practica),
+    );
+    const catalogo = CATALOGO_SEGUIMIENTO_BIO.map((desc) => ({
+      descripcion: desc,
+      marcada: marcadasHoy.has(desc),
+    }));
+    res.json({ catalogo });
   } catch (e) {
-    res.status(500).json({ practicas: [] });
+    res.status(500).json({ catalogo: [] });
   }
 });
 
+app.post("/api/bioquimico/seguimiento/marcar", async (req, res) => {
+  const { dni, descripcion } = req.body;
+  const hoy = new Date().toISOString().split("T")[0];
+  try {
+    const { data: afiliado } = await supabase
+      .from("afiliados")
+      .select("nombre, apellido")
+      .eq("dni", dni)
+      .single();
+
+    await supabase.from("practicas_autorizadas").insert({
+      dni,
+      nombre_completo: afiliado
+        ? `${afiliado.apellido} ${afiliado.nombre}`
+        : null,
+      descripcion_practica: descripcion,
+      estado: "AUTORIZADA",
+      fecha_autorizacion: hoy,
+      observaciones: "Indicado por bioquímico - seguimiento",
+    });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
 app.patch("/api/indicacion-practica/:id", async (req, res) => {
   try {
     const { error } = await supabase
