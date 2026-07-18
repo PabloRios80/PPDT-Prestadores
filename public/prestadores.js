@@ -1528,7 +1528,8 @@ async function buscarIndicacionesBio() {
   if (!dni) return alert("Ingrese un DNI");
   if (!prestadorActual) return alert("Sesión expirada. Ingrese nuevamente.");
 
-  contenedor.innerHTML = '<p class="text-center text-gray-400 py-6"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando...</p>';
+  contenedor.innerHTML =
+    '<p class="text-center text-gray-400 py-6"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando...</p>';
 
   try {
     const iaposRes = await fetch(`/verificar-afiliado/${dni}`);
@@ -1547,13 +1548,26 @@ async function buscarIndicacionesBio() {
         <p class="font-bold text-purple-900">👤 ${iaposData.nombre || "DNI: " + dni}</p>
       </div>
       <div id="seccion-extraccion-bio" class="bg-white rounded-xl shadow p-4 mb-4 border-2 border-purple-300"></div>
-      <div id="seccion-seguimiento-bio" class="bg-white rounded-xl shadow p-4 border-2 border-indigo-300"></div>
+      <button id="btn-abrir-seguimiento-bio"
+        class="w-full bg-indigo-600 text-white py-3 rounded-lg text-sm font-bold hover:bg-indigo-700">
+        <i class="fas fa-list-check mr-2"></i>Seguimiento (otras prácticas de laboratorio)
+      </button>
+      <div id="seccion-seguimiento-bio" class="hidden bg-white rounded-xl shadow p-4 mt-4 border-2 border-indigo-300"></div>
     `;
 
     renderExtraccionBio(dni);
-    await cargarSeguimientoBioInline(dni);
+
+    document
+      .getElementById("btn-abrir-seguimiento-bio")
+      .addEventListener("click", async () => {
+        const seccion = document.getElementById("seccion-seguimiento-bio");
+        seccion.classList.remove("hidden");
+        await cargarSeguimientoBioInline(dni);
+        seccion.scrollIntoView({ behavior: "smooth" });
+      });
   } catch (e) {
-    contenedor.innerHTML = '<p class="text-center text-red-500 py-6">Error al buscar el afiliado.</p>';
+    contenedor.innerHTML =
+      '<p class="text-center text-red-500 py-6">Error al buscar el afiliado.</p>';
   }
 }
 
@@ -1642,7 +1656,8 @@ async function guardarExtraccionBio(dni) {
 
 async function cargarSeguimientoBioInline(dni) {
   const seccion = document.getElementById("seccion-seguimiento-bio");
-  seccion.innerHTML = '<p class="text-center text-gray-400 py-4">Cargando seguimiento...</p>';
+  seccion.innerHTML =
+    '<p class="text-center text-gray-400 py-4">Cargando seguimiento...</p>';
   try {
     const res = await fetch(`/api/bioquimico/seguimiento/${dni}`);
     const data = await res.json();
@@ -1652,7 +1667,12 @@ async function cargarSeguimientoBioInline(dni) {
       <h3 class="font-bold text-indigo-800 mb-3 text-sm">
         <i class="fas fa-list-check mr-2"></i>Seguimiento — Prácticas de laboratorio
       </h3>
-      <div id="lista-seguimiento-bio-inline"></div>`;
+      <div id="lista-seguimiento-bio-inline"></div>
+      <button id="btn-cerrar-seguimiento-bio"
+        class="w-full bg-gray-500 text-white py-2 rounded-lg text-sm font-bold hover:bg-gray-600 mt-3">
+        <i class="fas fa-check mr-2"></i>Cerrar / Guardar
+      </button>
+      <p id="msg-finalizar-seguimiento" class="text-xs mt-2 text-center"></p>`;
 
     const lista = document.getElementById("lista-seguimiento-bio-inline");
     lista.innerHTML = catalogo
@@ -1695,7 +1715,20 @@ async function cargarSeguimientoBioInline(dni) {
         }
       });
     });
+    document
+      .getElementById("btn-cerrar-seguimiento-bio")
+      .addEventListener("click", () => {
+        const msg = document.getElementById("msg-finalizar-seguimiento");
+        msg.className = "text-xs mt-2 text-center text-green-600 font-bold";
+        msg.textContent = "✅ Guardado correctamente.";
+        setTimeout(() => {
+          document
+            .getElementById("seccion-seguimiento-bio")
+            .classList.add("hidden");
+        }, 900);
+      });
   } catch (e) {
-    seccion.innerHTML = '<p class="text-red-500 text-center py-4">Error al cargar seguimiento.</p>';
+    seccion.innerHTML =
+      '<p class="text-red-500 text-center py-4">Error al cargar seguimiento.</p>';
   }
 }
