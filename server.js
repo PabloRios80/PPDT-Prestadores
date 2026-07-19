@@ -961,7 +961,9 @@ const CATALOGO_SEGUIMIENTO_BIO = [
 
 app.get("/api/bioquimico/seguimiento/:dni", async (req, res) => {
   const { dni } = req.params;
-  const hoy = new Date().toISOString().split("T")[0];
+  const hace30dias = new Date();
+  hace30dias.setDate(hace30dias.getDate() - 30);
+
   try {
     const { data } = await supabase
       .from("practicas_autorizadas")
@@ -969,15 +971,20 @@ app.get("/api/bioquimico/seguimiento/:dni", async (req, res) => {
       .eq("dni", dni)
       .eq("estado", "AUTORIZADA")
       .in("descripcion_practica", CATALOGO_SEGUIMIENTO_BIO)
-      .gte("fecha_autorizacion", hoy)
-      .lte("fecha_autorizacion", `${hoy}T23:59:59`);
+      .gte("fecha_autorizacion", hace30dias.toISOString().split("T")[0])
+      .order("fecha_autorizacion", { ascending: false });
 
-    const marcadasHoy = new Set(
-      (data || []).map((d) => d.descripcion_practica),
-    );
+    const ultimaPorDescripcion = {};
+    (data || []).forEach((d) => {
+      if (!ultimaPorDescripcion[d.descripcion_practica]) {
+        ultimaPorDescripcion[d.descripcion_practica] = d.fecha_autorizacion;
+      }
+    });
+
     const catalogo = CATALOGO_SEGUIMIENTO_BIO.map((desc) => ({
       descripcion: desc,
-      marcada: marcadasHoy.has(desc),
+      marcada: !!ultimaPorDescripcion[desc],
+      fecha: ultimaPorDescripcion[desc] || null,
     }));
     res.json({ catalogo });
   } catch (e) {
@@ -1020,6 +1027,27 @@ app.patch("/api/indicacion-practica/:id", async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ success: false });
+  }
+});
+app.get("/api/bioquimico/ultima-extraccion/:dni", async (req, res) => {
+  const { dni } = req.params;
+  const hace30dias = new Date();
+  hace30dias.setDate(hace30dias.getDate() - 30);
+
+  try {
+    const { data } = await supabase
+      .from("practicas_autorizadas")
+      .select("fecha_carga, nombre_prestador")
+      .eq("dni", dni)
+      .eq("descripcion_practica", "Práctica bioquímica")
+      .gte("fecha_carga", hace30dias.toISOString())
+      .order("fecha_carga", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    res.json({ ultima: data || null });
+  } catch (e) {
+    res.status(500).json({ ultima: null });
   }
 });
 app.listen(PORT, () =>

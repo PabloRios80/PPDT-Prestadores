@@ -1577,6 +1577,7 @@ function renderExtraccionBio(dni) {
     <h3 class="font-bold text-purple-800 mb-3 text-sm">
       <i class="fas fa-syringe mr-2"></i>Extracción / Datos del Día Preventivo
     </h3>
+    <div id="alerta-extraccion-previa"></div>
     <div class="space-y-3">
       <div>
         <label class="text-xs font-bold text-gray-600 block mb-1">Módulo</label>
@@ -1613,6 +1614,32 @@ function renderExtraccionBio(dni) {
   document
     .getElementById("btn-guardar-extraccion-bio")
     .addEventListener("click", () => guardarExtraccionBio(dni));
+
+  // Chequear si ya hubo una extracción reciente
+  fetch(`/api/bioquimico/ultima-extraccion/${dni}`)
+    .then((r) => r.json())
+    .then((data) => {
+      const alerta = document.getElementById("alerta-extraccion-previa");
+      if (data.ultima) {
+        const fecha = new Date(data.ultima.fecha_carga).toLocaleString(
+          "es-AR",
+          {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          },
+        );
+        alerta.innerHTML = `
+          <div class="bg-yellow-50 border border-yellow-300 rounded-lg p-3 mb-3 text-xs text-yellow-800">
+            <i class="fas fa-triangle-exclamation mr-1"></i>
+            Ya se registró una extracción para este paciente el <strong>${fecha}</strong>
+            (${data.ultima.nombre_prestador || "prestador no especificado"}).
+          </div>`;
+      }
+    })
+    .catch(() => {});
 }
 
 async function guardarExtraccionBio(dni) {
@@ -1679,9 +1706,12 @@ async function cargarSeguimientoBioInline(dni) {
       .map(
         (p) => `
         <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px solid ${p.marcada ? "#a5b4fc" : "#e5e7eb"}; border-radius:8px; margin-bottom:8px; background:${p.marcada ? "#eef2ff" : "#f9fafb"};">
-          <span style="font-size:13px; color:${p.marcada ? "#4338ca" : "#374151"}; font-weight:${p.marcada ? "700" : "400"};">
-            ${p.descripcion}
-          </span>
+          <div>
+            <span style="font-size:13px; color:${p.marcada ? "#4338ca" : "#374151"}; font-weight:${p.marcada ? "700" : "400"};">
+              ${p.descripcion}
+            </span>
+            ${p.marcada ? `<div style="font-size:11px; color:#6366f1; margin-top:2px;"><i class="fas fa-clock"></i> Cargada el ${new Date(p.fecha).toLocaleDateString("es-AR")}</div>` : ""}
+          </div>
           <button class="btn-marcar-seguimiento-inline" data-descripcion="${p.descripcion}" ${p.marcada ? "disabled" : ""}
             style="font-size:12px; padding:5px 12px; border-radius:20px; font-weight:700; border:none; cursor:${p.marcada ? "default" : "pointer"}; background:${p.marcada ? "#c7d2fe" : "#e5e7eb"}; color:${p.marcada ? "#4338ca" : "#6b7280"};">
             ${p.marcada ? "✓ Marcada" : "Marcar"}
