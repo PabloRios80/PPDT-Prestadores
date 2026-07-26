@@ -152,53 +152,67 @@
     </div>
 
     <script>
-      const PRESTADORES_POR_ESPECIALIDAD_PREV = {
-        "Laboratorio Bioquimico": [{ id: 15, nombre: "MEGA", tipo: "simple" }],
-        "Diagnostico por Imagenes": [
-          { id: 16, nombre: "CIMBI", tipo: "simple" },
-          { id: 17, nombre: "Diagnostico por Imagenes S.A.", tipo: "simple" },
-        ],
-        Gastroenterologia: [{ id: 20, nombre: "VESALIO", tipo: "inst" }],
-        Densitometria: [],
-        Biopsias: [],
-        Papanicolau: [],
-        Oftalmologia: [],
-        Espirometria: [],
-        Odontologia: [],
+      // Mapeo de nombres del <select> del HTML a los nombres reales de especialidad en la base
+      const MAPA_ESPECIALIDAD_DB = {
+        "Laboratorio Bioquimico": "Laboratorio Bioquimico",
+        "Diagnostico por Imagenes": "Diagnostico por Imagenes",
+        Gastroenterologia: "Gastroenterologia",
+        Densitometria: "Densitometria",
+        Biopsias: "Biopsias",
+        Papanicolau: "Papanicolau",
+        Oftalmologia: "Oftalmologia",
+        Espirometria: "Espirometria",
+        Odontologia: "Odontologia",
       };
 
-      function actualizarPrestadoresPrev() {
+      async function actualizarPrestadoresPrev() {
         const esp = document.getElementById("selectEspecialidadPrev").value;
         const select = document.getElementById("selectPrestadorPrev");
-        select.innerHTML = '<option value="">Seleccioná prestador</option>';
-        const lista = PRESTADORES_POR_ESPECIALIDAD_PREV[esp] || [];
-        if (lista.length === 0) {
+        select.innerHTML = '<option value="">Cargando...</option>';
+
+        const especialidadReal = MAPA_ESPECIALIDAD_DB[esp] || esp;
+
+        try {
+          const res = await fetch(
+            `/api/prestadores-externos/${encodeURIComponent(especialidadReal)}`,
+          );
+          const data = await res.json();
+          const lista = data.data || [];
+
+          if (lista.length === 0) {
+            select.innerHTML =
+              '<option value="">Sin prestadores cargados para esta especialidad</option>';
+            window._prestadoresPrevActuales = [];
+            return;
+          }
+
+          select.innerHTML = '<option value="">Seleccioná prestador</option>';
+          lista.forEach((p) => {
+            const opt = document.createElement("option");
+            opt.value = p.id;
+            opt.textContent = p.nombre_institucion;
+            select.appendChild(opt);
+          });
+          window._prestadoresPrevActuales = lista;
+        } catch (e) {
           select.innerHTML =
-            '<option value="">Sin prestadores cargados para esta especialidad</option>';
-          return;
+            '<option value="">Error al cargar prestadores</option>';
         }
-        lista.forEach((p) => {
-          const opt = document.createElement("option");
-          opt.value = p.tipo + "_" + p.id;
-          opt.textContent = p.nombre;
-          select.appendChild(opt);
-        });
       }
 
       function ingresarComoPrestadorPrev() {
         const esp = document.getElementById("selectEspecialidadPrev").value;
-        const prestVal = document.getElementById("selectPrestadorPrev").value;
-        if (!esp || !prestVal)
+        const prestId = document.getElementById("selectPrestadorPrev").value;
+        if (!esp || !prestId)
           return alert("Seleccioná especialidad y prestador.");
-        const [tipo, id] = prestVal.split("_");
-        const lista = PRESTADORES_POR_ESPECIALIDAD_PREV[esp] || [];
-        const prest = lista.find(
-          (p) => p.tipo === tipo && p.id.toString() === id,
-        );
+
+        const lista = window._prestadoresPrevActuales || [];
+        const prest = lista.find((p) => p.id.toString() === prestId);
         if (!prest) return alert("Prestador no encontrado.");
+
         prestadorActual = {
           id: prest.id,
-          nombre: prest.nombre,
+          nombre: prest.nombre_institucion,
           especialidad: esp,
         };
         sessionStorage.setItem("prestador", JSON.stringify(prestadorActual));
