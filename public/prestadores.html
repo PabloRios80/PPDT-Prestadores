@@ -174,7 +174,7 @@
 
         try {
           const res = await fetch(
-            `/api/prestadores-externos/${encodeURIComponent(especialidadReal)}`,
+            `https://tablero-dia.onrender.com/api/prestadores-externos/${encodeURIComponent(especialidadReal)}`,
           );
           const data = await res.json();
           const lista = data.data || [];
