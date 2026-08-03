@@ -250,7 +250,34 @@
           .classList.add("hidden");
         mostrarPortal();
       }
+
+      // ── Diferenciación visual: tinte violeta cuando está activo "Indicaciones Bioquímicas" ──
+      document.addEventListener("DOMContentLoaded", () => {
+        const seccionBio = document.getElementById("contenido-indicaciones-bio");
+        if (!seccionBio) return;
+
+        function actualizarTinte() {
+          const activo = !seccionBio.classList.contains("hidden");
+          document.body.classList.toggle("modo-indicaciones-bio", activo);
+        }
+
+        const observer = new MutationObserver(actualizarTinte);
+        observer.observe(seccionBio, {
+          attributes: true,
+          attributeFilter: ["class"],
+        });
+        actualizarTinte();
+      });
     </script>
+    <style>
+      body.modo-indicaciones-bio {
+        background-color: #faf5ff;
+        transition: background-color 0.2s ease;
+      }
+      body.modo-indicaciones-bio header {
+        box-shadow: 0 3px 0 0 #9333ea;
+      }
+    </style>
 
     <!-- PANTALLA DE LOGIN -->
     <div
