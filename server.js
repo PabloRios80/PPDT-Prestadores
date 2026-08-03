@@ -150,7 +150,17 @@ app.get("/getPracticasPrestador/:dni/:especialidad", async (req, res) => {
     Odontologia: ["odontologico", "dental"],
     Espirometria: ["espirometria"],
     "Prestador PPDT": ["vacunas"],
-    "coordinacion_dp": [
+    coordinacion_dp: [
+      "Topicación con flúor",
+      "Enseñanza técnica H.O.",
+      "Práctica bioquímica",
+      "SOMF",
+      "papanicolau",
+      "Módulo Día Preventivo",
+      "Módulo Seguimiento",
+      "Telereceta",
+    ],
+    "Coordinacion DP": [
       "Topicación con flúor",
       "Enseñanza técnica H.O.",
       "Práctica bioquímica",
