@@ -31,6 +31,8 @@
           window.dpProfesional = payload.nombre;
           window.dpRol = payload.profesion;
           window.dpEsPreventivista = payload.profesion === "preventivista";
+          window.dpIdSedeDp = payload.id_sede_dp || null;
+          window.dpToken = token;
         } catch (e) {
           window.location.href =
             "https://acceso.diapreventivoiapos.com/login.html?redirect=prestadores";
@@ -153,6 +155,30 @@
     </div>
 
     <script>
+      // ── Ver Tablero del Día (solo dentro de Indicaciones Bioquímicas) ──
+      function verTableroDelDia() {
+        window.open(
+          `https://tablero-dia.onrender.com/?token=${encodeURIComponent(window.dpToken)}`,
+          "_blank",
+        );
+      }
+
+      (function () {
+        const SEDES_CON_TABLERO = [1, 4, 6];
+        const btnIndicacionesBio = document.getElementById("btnIndicacionesBio");
+        if (btnIndicacionesBio) {
+          btnIndicacionesBio.addEventListener("click", () => {
+            const btnTablero = document.getElementById("btnVerTableroBio");
+            if (btnTablero) {
+              btnTablero.classList.toggle(
+                "hidden",
+                !SEDES_CON_TABLERO.includes(window.dpIdSedeDp),
+              );
+            }
+          });
+        }
+      })();
+
       // Mapeo de nombres del <select> del HTML a los nombres reales de especialidad en la base
       const MAPA_ESPECIALIDAD_DB = {
         "Laboratorio Bioquimico": "laboratorio",
@@ -426,10 +452,20 @@
           <div
             class="bg-white rounded-xl shadow p-6 mb-6 border border-purple-100"
           >
-            <h2 class="font-bold text-purple-800 mb-3 flex items-center">
-              <i class="fas fa-vial text-purple-500 mr-2"></i>Indicaciones
-              Bioquímicas
-            </h2>
+            <div class="flex items-center justify-between mb-3">
+              <h2 class="font-bold text-purple-800 flex items-center">
+                <i class="fas fa-vial text-purple-500 mr-2"></i>Indicaciones
+                Bioquímicas
+              </h2>
+              <a
+                href="#"
+                id="btnVerTableroBio"
+                onclick="verTableroDelDia(); return false;"
+                class="hidden bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm transition"
+              >
+                <i class="fas fa-table mr-1"></i> Ver Tablero del Día
+              </a>
+            </div>
             <div class="flex gap-2">
               <input
                 type="text"
