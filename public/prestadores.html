@@ -258,7 +258,12 @@
 
         function actualizarTinte() {
           const activo = !seccionBio.classList.contains("hidden");
+          const header = document.querySelector("header");
           document.body.classList.toggle("modo-indicaciones-bio", activo);
+          if (header) {
+            header.classList.toggle("bg-blue-600", !activo);
+            header.classList.toggle("bg-purple-700", activo);
+          }
         }
 
         const observer = new MutationObserver(actualizarTinte);
@@ -477,7 +482,12 @@
         </div>
         <div id="contenido-indicaciones-bio" class="hidden">
           <div
-            class="bg-white rounded-xl shadow p-6 mb-6 border border-purple-100"
+            class="bg-purple-700 text-white text-center py-2 px-4 rounded-lg mb-4 font-bold text-sm shadow"
+          >
+            <i class="fas fa-vial mr-2"></i>MODO INDICACIONES BIOQUÍMICAS
+          </div>
+          <div
+            class="bg-white rounded-xl shadow p-6 mb-6 border-2 border-purple-400"
           >
             <div class="flex items-center justify-between mb-3">
               <h2 class="font-bold text-purple-800 flex items-center">
