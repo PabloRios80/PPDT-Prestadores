@@ -1596,13 +1596,15 @@ function renderExtraccionBio(dni) {
       <label class="flex items-center gap-2 text-sm">
         <input type="checkbox" id="bio_somf_input" class="w-4 h-4"> SOMF
       </label>
-      <div>
-        <label class="text-xs font-bold text-gray-600 block mb-1">Resultado SOMF (si corresponde)</label>
-        <select id="bio_resultado_somf_input" class="w-full border border-gray-300 rounded-lg p-2 text-sm">
-          <option value="">Sin resultado</option>
-          <option value="NEGATIVO">NEGATIVO</option>
-          <option value="POSITIVO">POSITIVO ⚠️</option>
-        </select>
+      <div style="border-top:1px solid #e5e7eb; padding-top:10px; margin-top:6px;">
+        <p class="text-xs font-bold text-gray-600 mb-2">Recepción de kits de muestra</p>
+        <label class="flex items-center gap-2 text-sm mb-1">
+          <input type="checkbox" id="chk-recibi-hpv" class="w-4 h-4"> Recibí kit HPV
+        </label>
+        <label class="flex items-center gap-2 text-sm">
+          <input type="checkbox" id="chk-recibi-somf" class="w-4 h-4"> Recibí kit SOMF
+        </label>
+        <p id="estado-kits-info" class="text-xs text-gray-400 mt-1"></p>
       </div>
       <button id="btn-guardar-extraccion-bio"
         class="w-full bg-purple-600 text-white py-2 rounded-lg text-sm font-bold hover:bg-purple-700 mt-2">
@@ -1614,6 +1616,19 @@ function renderExtraccionBio(dni) {
   document
     .getElementById("btn-guardar-extraccion-bio")
     .addEventListener("click", () => guardarExtraccionBio(dni));
+
+  document
+    .getElementById("chk-recibi-hpv")
+    .addEventListener("change", (e) => {
+      if (e.target.checked) recibirKit(dni, "HPV", e.target);
+    });
+  document
+    .getElementById("chk-recibi-somf")
+    .addEventListener("change", (e) => {
+      if (e.target.checked) recibirKit(dni, "SOMF", e.target);
+    });
+
+  cargarEstadoKitsBio(dni);
 
   // Chequear si ya hubo una extracción reciente
   fetch(`/api/bioquimico/ultima-extraccion/${dni}`)
@@ -1642,6 +1657,52 @@ function renderExtraccionBio(dni) {
     .catch(() => {});
 }
 
+async function cargarEstadoKitsBio(dni) {
+  try {
+    const res = await fetch(`/api/kits-estado/${dni}`);
+    const data = await res.json();
+    const kits = data.kits || [];
+    const infoLinea = [];
+
+    kits.forEach((k) => {
+      const chk = document.getElementById(
+        `chk-recibi-${k.tipo_kit.toLowerCase()}`,
+      );
+      if (!chk) return;
+      if (k.recibido) {
+        chk.checked = true;
+        chk.disabled = true;
+        infoLinea.push(`${k.tipo_kit}: ya recibido`);
+      } else if (k.entregado) {
+        infoLinea.push(
+          `${k.tipo_kit}: kit entregado (${k.rol_entrego === "enfermeria" ? "por enfermería" : "por bioquímica/o"}), pendiente de recepción`,
+        );
+      }
+    });
+
+    const infoEl = document.getElementById("estado-kits-info");
+    if (infoEl) infoEl.textContent = infoLinea.join(" · ");
+  } catch (e) {}
+}
+
+async function recibirKit(dni, tipoKit, checkboxEl) {
+  checkboxEl.disabled = true;
+  try {
+    await fetch("/api/kits/recibir", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dni,
+        tipo_kit: tipoKit,
+        recibido_por: prestadorActual?.nombre || "Desconocido",
+      }),
+    });
+  } catch (e) {
+    checkboxEl.disabled = false;
+    alert("Error al registrar la recepción del kit. Intentá de nuevo.");
+  }
+}
+
 async function guardarExtraccionBio(dni) {
   const btn = document.getElementById("btn-guardar-extraccion-bio");
   const msg = document.getElementById("msg-extraccion-bio");
@@ -1654,7 +1715,6 @@ async function guardarExtraccionBio(dni) {
     psa: document.getElementById("bio_psa_input").checked,
     hpv: document.getElementById("bio_hpv_input").checked,
     somf: document.getElementById("bio_somf_input").checked,
-    resultado_somf: document.getElementById("bio_resultado_somf_input").value,
     idPrestador: prestadorActual.id,
     nombrePrestador: prestadorActual.nombre,
   };

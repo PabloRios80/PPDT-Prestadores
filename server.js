@@ -890,18 +890,11 @@ app.delete("/eliminarPractica/:id", async (req, res) => {
   }
 });
 app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
-  const {
-    dni,
-    modulo,
-    psa,
-    hpv,
-    somf,
-    resultado_somf,
-    idPrestador,
-    nombrePrestador,
-  } = req.body;
+  const { dni, modulo, psa, hpv, somf, idPrestador, nombrePrestador } =
+    req.body;
 
   const hoy = new Date().toISOString().split("T")[0];
+  const seMarcoModulo = !!modulo;
 
   try {
     const { data: registro } = await supabase
@@ -916,47 +909,104 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
       await supabase
         .from("tablero_dia")
         .update({
-          bio_paso: true,
+          // El círculo "LAB" del tablero solo debe quedar verde si se marcó Módulo
+          bio_paso: seMarcoModulo,
           bio_modulo: modulo || null,
           bio_psa: !!psa,
           bio_hpv: !!hpv,
           bio_somf: !!somf,
-          bio_resultado_somf: resultado_somf || null,
           bio_cargado_analisis: true,
         })
         .eq("id", registro.id);
     }
 
-    const { data: yaExiste } = await supabase
-      .from("practicas_autorizadas")
-      .select("id")
-      .eq("dni", dni)
-      .eq("descripcion_practica", "Práctica bioquímica")
-      .eq("id_prestador", idPrestador?.toString())
-      .gte("fecha_carga", `${hoy}T00:00:00`)
-      .maybeSingle();
-
-    if (!yaExiste) {
-      const { data: afiliado } = await supabase
-        .from("afiliados")
-        .select("nombre, apellido")
+    // El código facturable (679900 / B040103) solo corresponde si se marcó
+    // Módulo o HPV — SOMF y PSA solos no lo disparan.
+    if (seMarcoModulo || hpv) {
+      const { data: yaExiste } = await supabase
+        .from("practicas_autorizadas")
+        .select("id")
         .eq("dni", dni)
-        .single();
+        .eq("descripcion_practica", "Práctica bioquímica")
+        .eq("id_prestador", idPrestador?.toString())
+        .gte("fecha_carga", `${hoy}T00:00:00`)
+        .maybeSingle();
 
-      await supabase.from("practicas_autorizadas").insert({
-        dni,
-        nombre_completo: afiliado
-          ? `${afiliado.apellido} ${afiliado.nombre}`
-          : null,
-        descripcion_practica: "Práctica bioquímica",
-        estado: "REALIZADA",
-        fecha_autorizacion: hoy,
-        fecha_carga: new Date().toISOString(),
-        id_prestador: idPrestador?.toString(),
-        nombre_prestador: nombrePrestador,
-      });
+      if (!yaExiste) {
+        const { data: afiliado } = await supabase
+          .from("afiliados")
+          .select("nombre, apellido")
+          .eq("dni", dni)
+          .single();
+
+        await supabase.from("practicas_autorizadas").insert({
+          dni,
+          nombre_completo: afiliado
+            ? `${afiliado.apellido} ${afiliado.nombre}`
+            : null,
+          descripcion_practica: "Práctica bioquímica",
+          estado: "REALIZADA",
+          fecha_autorizacion: hoy,
+          fecha_carga: new Date().toISOString(),
+          id_prestador: idPrestador?.toString(),
+          nombre_prestador: nombrePrestador,
+        });
+      }
     }
 
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// ── KITS HPV / SOMF (recepción, compartido con enfermería) ──
+app.get("/api/kits-estado/:dni", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("kits_seguimiento")
+      .select("*")
+      .eq("dni", req.params.dni);
+    if (error) throw error;
+    res.json({ success: true, kits: data || [] });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+app.post("/api/kits/recibir", async (req, res) => {
+  const { dni, tipo_kit, recibido_por } = req.body;
+  if (!dni || !tipo_kit) {
+    return res.status(400).json({ success: false, message: "Faltan datos." });
+  }
+  try {
+    const { data: existente } = await supabase
+      .from("kits_seguimiento")
+      .select("id")
+      .eq("dni", dni)
+      .eq("tipo_kit", tipo_kit)
+      .maybeSingle();
+
+    if (existente) {
+      await supabase
+        .from("kits_seguimiento")
+        .update({
+          recibido: true,
+          recibido_por,
+          fecha_recepcion: new Date().toISOString(),
+        })
+        .eq("id", existente.id);
+    } else {
+      // Caso raro: recibieron un kit que nunca quedó registrado como entregado.
+      // Lo creamos igual, para no perder el dato.
+      await supabase.from("kits_seguimiento").insert({
+        dni,
+        tipo_kit,
+        recibido: true,
+        recibido_por,
+        fecha_recepcion: new Date().toISOString(),
+      });
+    }
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
