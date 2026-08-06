@@ -3,6 +3,7 @@ const { createClient } = require("@supabase/supabase-js");
 const express = require("express");
 const axios = require("axios");
 const path = require("path");
+const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 const {
   registrarEndpointLeerLaboratorio,
   leerValoresLaboratorioConClaude,
@@ -436,6 +437,121 @@ function buscarUltimaRealizacion(practica, practicasHistoricas, historial) {
   }
   return null;
 }
+// ── Genera un PDF simple con el resultado de SOMF, cuando el bioquímico
+// carga el resultado en texto libre en vez de subir un archivo/link. ──
+async function generarPdfInformeSomf({
+  nombrePaciente,
+  dniPaciente,
+  resultado,
+  nombreBioquimico,
+  matriculaBioquimico,
+  fecha,
+}) {
+  const pdfDoc = await PDFDocument.create();
+  const page = pdfDoc.addPage([595, 400]); // A4 aprox, altura recortada
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+  let y = 350;
+  const margenX = 50;
+
+  page.drawText("Día Preventivo IAPOS", {
+    x: margenX,
+    y,
+    size: 18,
+    font: fontBold,
+    color: rgb(0.01, 0.25, 0.54),
+  });
+  y -= 22;
+  page.drawText("Informe de resultado — Sangre Oculta en Materia Fecal (SOMF)", {
+    x: margenX,
+    y,
+    size: 12,
+    font: fontRegular,
+    color: rgb(0.3, 0.3, 0.3),
+  });
+  y -= 40;
+
+  const linea = (etiqueta, valor) => {
+    page.drawText(etiqueta, { x: margenX, y, size: 11, font: fontBold });
+    page.drawText(String(valor || "-"), {
+      x: margenX + 150,
+      y,
+      size: 11,
+      font: fontRegular,
+    });
+    y -= 24;
+  };
+
+  linea("Paciente:", nombrePaciente);
+  linea("DNI:", dniPaciente);
+  linea("Fecha:", fecha);
+  y -= 10;
+
+  page.drawText("Resultado:", { x: margenX, y, size: 13, font: fontBold });
+  const colorResultado =
+    (resultado || "").toUpperCase() === "POSITIVO"
+      ? rgb(0.7, 0.1, 0.1)
+      : rgb(0.1, 0.5, 0.2);
+  page.drawText(String(resultado || "-").toUpperCase(), {
+    x: margenX + 150,
+    y,
+    size: 13,
+    font: fontBold,
+    color: colorResultado,
+  });
+  y -= 50;
+
+  page.drawText("Profesional responsable:", {
+    x: margenX,
+    y,
+    size: 11,
+    font: fontBold,
+  });
+  y -= 20;
+  linea("Nombre:", nombreBioquimico);
+  linea("Matrícula:", matriculaBioquimico);
+
+  const pdfBytes = await pdfDoc.save();
+  return Buffer.from(pdfBytes);
+}
+
+// ── Busca nombre y matrícula del bioquímico responsable, ya sea que haya
+// cargado como profesional individual o como institución (usa el
+// responsable declarado por la institución en ese caso). ──
+async function obtenerDatosBioquimicoResponsable(idPrestador) {
+  try {
+    const { data: prof } = await supabase
+      .from("profesionales")
+      .select("nombre, apellido, matricula")
+      .eq("dni", idPrestador)
+      .maybeSingle();
+
+    if (prof) {
+      return {
+        nombre: `${prof.nombre} ${prof.apellido}`.trim(),
+        matricula: prof.matricula || "-",
+      };
+    }
+
+    const { data: institucion } = await supabase
+      .from("prestadores_institucionales")
+      .select("nombre_responsable, matricula_responsable")
+      .eq("id", idPrestador)
+      .maybeSingle();
+
+    if (institucion) {
+      return {
+        nombre: institucion.nombre_responsable || "-",
+        matricula: institucion.matricula_responsable || "-",
+      };
+    }
+  } catch (e) {
+    console.warn("No se pudo obtener datos del bioquímico responsable:", e.message);
+  }
+  return { nombre: "-", matricula: "-" };
+}
+
 app.post("/savePracticeResult", async (req, res) => {
   const {
     dni,
@@ -491,6 +607,57 @@ app.post("/savePracticeResult", async (req, res) => {
           .from("resultados-practicas")
           .getPublicUrl(fileName);
         enlacePdf = urlData.publicUrl;
+      }
+    }
+
+    const descLowerParaSomf = (descripcion || "").toLowerCase();
+    const esSomf =
+      descLowerParaSomf.includes("somf") ||
+      descLowerParaSomf.includes("sangre oculta");
+
+    // Generar PDF automático solo para SOMF, solo si no se subió archivo/link,
+    // y solo si vino un resultado en texto libre.
+    if (esSomf && !enlacePdf && resultadoValor) {
+      try {
+        const { data: afiliadoPdf } = await supabase
+          .from("afiliados")
+          .select("nombre, apellido")
+          .eq("dni", dni)
+          .single();
+        const nombrePacientePdf = afiliadoPdf
+          ? `${afiliadoPdf.apellido} ${afiliadoPdf.nombre}`
+          : dni;
+
+        const { nombre: nombreBioq, matricula: matriculaBioq } =
+          await obtenerDatosBioquimicoResponsable(idPrestador);
+
+        const hoyLegible = new Date().toLocaleDateString("es-AR");
+
+        const pdfBuffer = await generarPdfInformeSomf({
+          nombrePaciente: nombrePacientePdf,
+          dniPaciente: dni,
+          resultado: resultadoValor,
+          nombreBioquimico: nombreBioq,
+          matriculaBioquimico: matriculaBioq,
+          fecha: hoyLegible,
+        });
+
+        const fileNamePdf = `${dni}/${Date.now()}_informe_somf.pdf`;
+        const { error: uploadPdfError } = await supabase.storage
+          .from("resultados-practicas")
+          .upload(fileNamePdf, pdfBuffer, { contentType: "application/pdf" });
+
+        if (!uploadPdfError) {
+          const { data: urlPdfData } = supabase.storage
+            .from("resultados-practicas")
+            .getPublicUrl(fileNamePdf);
+          enlacePdf = urlPdfData.publicUrl;
+          console.log("✅ PDF automático de SOMF generado para DNI:", dni);
+        } else {
+          console.warn("No se pudo subir el PDF automático de SOMF:", uploadPdfError.message);
+        }
+      } catch (pdfErr) {
+        console.error("Error generando PDF automático de SOMF:", pdfErr.message);
       }
     }
 
@@ -594,6 +761,41 @@ app.post("/savePracticeResult", async (req, res) => {
           [columnaHistorica]: resultadoValor,
           link_pdf: JSON.stringify(enlacePdf ? [enlacePdf] : []),
         });
+      }
+    }
+
+    // Marcar en kits_seguimiento que el resultado de SOMF ya fue cargado
+    if (esSomf && resultadoValor) {
+      try {
+        const { data: kitExistente } = await supabase
+          .from("kits_seguimiento")
+          .select("id")
+          .eq("dni", dni)
+          .eq("tipo_kit", "SOMF")
+          .maybeSingle();
+
+        if (kitExistente) {
+          await supabase
+            .from("kits_seguimiento")
+            .update({
+              resultado_cargado: true,
+              resultado: resultadoValor,
+              cargado_por: nombrePrestador,
+              fecha_resultado: new Date().toISOString(),
+            })
+            .eq("id", kitExistente.id);
+        } else {
+          await supabase.from("kits_seguimiento").insert({
+            dni,
+            tipo_kit: "SOMF",
+            resultado_cargado: true,
+            resultado: resultadoValor,
+            cargado_por: nombrePrestador,
+            fecha_resultado: new Date().toISOString(),
+          });
+        }
+      } catch (kitErr) {
+        console.warn("No se pudo actualizar kits_seguimiento para SOMF:", kitErr.message);
       }
     }
 
