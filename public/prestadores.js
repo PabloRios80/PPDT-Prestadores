@@ -1434,7 +1434,7 @@ document.addEventListener("DOMContentLoaded", () => {
     prestadorActual = {
       nombre: window.dpProfesional,
       especialidad: mapearEspecialidad(window.dpRol),
-      id: window.dpRol,
+      id: window.dpTokenId,
     };
     mostrarPortal();
   }

@@ -33,6 +33,7 @@
           window.dpEsPreventivista = payload.profesion === "preventivista";
           window.dpIdSedeDp = payload.id_sede_dp || null;
           window.dpToken = token;
+          window.dpTokenId = payload.id || null;
         } catch (e) {
           window.location.href =
             "https://acceso.diapreventivoiapos.com/login.html?redirect=prestadores";

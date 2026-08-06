@@ -524,7 +524,7 @@ async function obtenerDatosBioquimicoResponsable(idPrestador) {
     const { data: prof } = await supabase
       .from("profesionales")
       .select("nombre, apellido, matricula")
-      .eq("dni", idPrestador)
+      .eq("id", idPrestador)
       .maybeSingle();
 
     if (prof) {
