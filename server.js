@@ -954,6 +954,40 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
       }
     }
 
+    // 679915 (PSA) — se dispara solo por marcar PSA, con o sin módulo,
+    // exclusivo a SIOS (sin código interno de pago asociado).
+    if (psa) {
+      const { data: yaExistePsa } = await supabase
+        .from("practicas_autorizadas")
+        .select("id")
+        .eq("dni", dni)
+        .eq("descripcion_practica", "PSA (Antígeno prostático específico)")
+        .eq("id_prestador", idPrestador?.toString())
+        .gte("fecha_carga", `${hoy}T00:00:00`)
+        .maybeSingle();
+
+      if (!yaExistePsa) {
+        const { data: afiliadoPsa } = await supabase
+          .from("afiliados")
+          .select("nombre, apellido")
+          .eq("dni", dni)
+          .single();
+
+        await supabase.from("practicas_autorizadas").insert({
+          dni,
+          nombre_completo: afiliadoPsa
+            ? `${afiliadoPsa.apellido} ${afiliadoPsa.nombre}`
+            : null,
+          descripcion_practica: "PSA (Antígeno prostático específico)",
+          estado: "REALIZADA",
+          fecha_autorizacion: hoy,
+          fecha_carga: new Date().toISOString(),
+          id_prestador: idPrestador?.toString(),
+          nombre_prestador: nombrePrestador,
+        });
+      }
+    }
+
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
