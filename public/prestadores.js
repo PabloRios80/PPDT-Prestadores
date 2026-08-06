@@ -1,1159 +1,1881 @@
-require("dotenv").config();
-const { createClient } = require("@supabase/supabase-js");
-const express = require("express");
-const axios = require("axios");
-const path = require("path");
-const {
-  registrarEndpointLeerLaboratorio,
-  leerValoresLaboratorioConClaude,
-  extraerIdDeDriveLink,
-  descargarPDFDeDrive,
-} = require("./endpoint_leer_laboratorio");
-const {
-  registrarEndpointGuardarLaboratorio,
-} = require("./endpoint_guardar_laboratorio");
-const {
-  registrarEndpointDescargarPDFGenerico,
-} = require("./endpoint_descargar_pdf_generico");
-
-const app = express();
-const PORT = process.env.PORT || 3002;
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY,
-);
-
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
-app.use(express.static(path.join(__dirname, "public")));
-registrarEndpointLeerLaboratorio(app);
-registrarEndpointGuardarLaboratorio(app, supabase);
-registrarEndpointDescargarPDFGenerico(
-  app,
-  extraerIdDeDriveLink,
-  descargarPDFDeDrive,
-);
-
-const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
-
-// ── VERIFICAR AFILIADO IAPOS ──
-app.get("/verificar-afiliado/:dni", async (req, res) => {
-  const dni = req.params.dni;
-  const hoy = new Date().toISOString().split("T")[0];
-  const soapBody = `<?xml version="1.0" encoding="utf-8"?>
-    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-    <soap:Body>
-        <BEWsValidaAfi.Execute xmlns="IAPOS_WS">
-            <Usuario>CONSULTAPDP</Usuario>
-            <Passwd>1Qaz</Passwd>
-            <Nafiliado>${dni}</Nafiliado>
-            <Badocnumdo>${dni}</Badocnumdo>
-            <Tidocodigo_de_documento>96</Tidocodigo_de_documento>
-            <Ogorcodigo>1</Ogorcodigo>
-            <Fechpresta>${hoy}</Fechpresta>
-        </BEWsValidaAfi.Execute>
-    </soap:Body>
-    </soap:Envelope>`;
-  try {
-    const response = await axios.post(
-      "https://aswe.santafe.gov.ar/iapos-sw-srvt/servlet/abewsvalidaafi",
-      soapBody,
-      {
-        headers: {
-          "Content-Type": "text/xml; charset=utf-8",
-          SOAPAction: "IAPOS_WSaction/ABEWSVALIDAAFI.Execute",
-        },
-        timeout: 10000,
-      },
-    );
-    const xml = response.data;
-    const get = (tag) => {
-      const m = xml.match(new RegExp(`<${tag}[^>]*>([^<]*)<\/${tag}>`));
-      return m ? m[1].trim() : null;
-    };
-    const estado = get("Estado");
-    res.json({
-      esActivo: estado === "A",
-      estado,
-      nombre: get("Apenom"),
-      edad: get("Edad"),
-      sexo: get("Sexo"),
-      localidad: get("Localidad"),
-      mensaje: get("Msgdsc"),
-    });
-  } catch (e) {
-    res.status(500).json({ esActivo: false, error: e.message });
-  }
-});
-
-// ── LOGIN PRESTADOR ──
-app.post("/loginPrestador", async (req, res) => {
-  try {
-    const { usuario, password } = req.body;
-    const { data, error } = await supabase
-      .from("prestadores_institucionales")
-      .select("*")
-      .eq("usuario", usuario)
-      .eq("activo", true)
-      .single();
-
-    if (error || !data) {
-      return res.json({
-        success: false,
-        message: "Usuario o contraseña incorrectos.",
-      });
-    }
-
-    res.json({
-      success: true,
-      prestador: {
-        id: data.id,
-        nombre: data.nombre,
-        especialidad: data.especialidad,
-        ciudad: data.ciudad,
-      },
-    });
-  } catch (error) {
-    console.error("Error en /loginPrestador:", error.message);
-    res.status(500).json({ success: false, message: "Error de conexión." });
-  }
-});
-
-// ── OBTENER PRÁCTICAS POR ESPECIALIDAD ──
-app.get("/getPracticasPrestador/:dni/:especialidad", async (req, res) => {
-  const { dni, especialidad } = req.params;
-  const PRACTICAS_POR_ESPECIALIDAD = {
-    "Laboratorio Bioquimico": [
-      "glucemia",
-      "colesterol",
-      "creatinina",
-      "filtrado",
-      "trigliceridos",
-      "anti_VIH",
-      "hepatitis",
-      "chagas",
-      "VDRL",
-      "PSA",
-      "HPV",
-      "hemoglobina",
-      "microalbuminuria",
-      "proteinuria",
-      "clearence",
-      "SOMF",
-    ],
-    "Diagnostico por Imagenes": ["mamografia", "ecografia", "abdominal"],
-    Densitometria: ["densitometria", "osea"],
-    Gastroenterologia: ["colonoscopia", "VCC"],
-    Biopsias: ["biopsia"],
-    Papanicolau: ["papanicolau", "pap"],
-    Oftalmologia: ["vision", "visual", "oftalm"],
-    Odontologia: ["odontologico", "dental"],
-    Espirometria: ["espirometria"],
-    "Prestador PPDT": ["vacunas"],
-    coordinacion_dp: [
-      "Topicación con flúor",
-      "Enseñanza técnica H.O.",
-      "Práctica bioquímica",
-      "SOMF",
-      "papanicolau",
-      "Módulo Día Preventivo",
-      "Módulo Seguimiento",
-      "Telereceta",
-    ],
-    "Coordinacion DP": [
-      "Topicación con flúor",
-      "Enseñanza técnica H.O.",
-      "Práctica bioquímica",
-      "SOMF",
-      "papanicolau",
-      "Módulo Día Preventivo",
-      "Módulo Seguimiento",
-      "Telereceta",
-    ],
-  };
-
-  try {
-    const keywords = PRACTICAS_POR_ESPECIALIDAD[especialidad] || [];
-
-    // Si no hay prácticas autorizadas, generarlas automáticamente
-    const { data: existing } = await supabase
-      .from("practicas_autorizadas")
-      .select("id")
-      .eq("dni", dni)
-      .limit(1);
-
-    if (!existing || existing.length === 0) {
-      console.log(`Sin prácticas para DNI ${dni}, generando plan...`);
-      await axios.get(`http://localhost:${PORT}/getPreventivePlan/${dni}`);
-    }
-
-    const { data, error } = await supabase
-      .from("practicas_autorizadas")
-      .select("*")
-      .eq("dni", dni)
-      .or(keywords.map((k) => `descripcion_practica.ilike.%${k}%`).join(","));
-
-    if (error) throw error;
-
-    const { data: afiliado } = await supabase
-      .from("afiliados")
-      .select("nombre, apellido")
-      .eq("dni", dni)
-      .single();
-
-    const practicasConNombre = (data || []).map((p) => ({
-      ...p,
-      nombre_completo: afiliado
-        ? `${afiliado.apellido} ${afiliado.nombre}`
-        : p.nombre_completo,
-    }));
-
-    res.json({ success: true, practicas: practicasConNombre });
-  } catch (error) {
-    console.error("Error en /getPracticasPrestador:", error.message);
-    res.status(500).json({ success: false, message: "Error de conexión." });
-  }
-});
-
-// ── GENERAR PLAN PREVENTIVO ──
-app.get("/getPreventivePlan/:dni", async (req, res) => {
-  const dni = req.params.dni;
-  console.log(`Generando plan preventivo para DNI: ${dni}`);
-
-  try {
-    const { data: afiliado, error: errorAfiliado } = await supabase
-      .from("afiliados")
-      .select("*")
-      .eq("dni", dni)
-      .single();
-
-    if (errorAfiliado || !afiliado) {
-      return res.json({ success: false, message: "Afiliado no encontrado." });
-    }
-
-    const { data: historial } = await supabase
-      .from("historial_dia_preventivo")
-      .select("*")
-      .eq("dni", dni)
-      .order("fechax", { ascending: false });
-
-    const { data: practicasHistoricas } = await supabase
-      .from("practicas_historicas")
-      .select("*")
-      .eq("dni", dni)
-      .order("fecha", { ascending: false });
-
-    const { data: practicasYaAutorizadas } = await supabase
-      .from("practicas_autorizadas")
-      .select("*")
-      .eq("dni", dni)
-      .in("estado", ["AUTORIZADA", "REALIZADA"]);
-
-    const { data: reglas } = await supabase
-      .from("reglas_preventivas")
-      .select("*");
-
-    const practicasAutorizar = evaluarReglas(
-      afiliado,
-      historial || [],
-      practicasHistoricas || [],
-      practicasYaAutorizadas || [],
-      reglas || [],
-    );
-
-    if (practicasAutorizar.length === 0) {
-      return res.json({
-        success: true,
-        message: "El afiliado está al día.",
-        autorizadas: 0,
-      });
-    }
-
-    const nombreCompleto =
-      `${afiliado.apellido || ""} ${afiliado.nombre || ""}`.trim();
-    const nuevasPracticas = practicasAutorizar.map((p) => ({
-      dni,
-      nombre_completo: nombreCompleto,
-      descripcion_practica: p.practica,
-      codigo_prestacion: p.codigo || null,
-      estado: "AUTORIZADA",
-      fecha_autorizacion: new Date().toISOString(),
-    }));
-
-    const { error: errorInsert } = await supabase
-      .from("practicas_autorizadas")
-      .insert(nuevasPracticas);
-
-    if (errorInsert) {
-      console.error("Error insertando prácticas:", errorInsert);
-      return res
-        .status(500)
-        .json({ success: false, message: "Error al guardar prácticas." });
-    }
-
-    console.log(
-      `✅ ${nuevasPracticas.length} prácticas autorizadas para DNI ${dni}`,
-    );
-    res.json({
-      success: true,
-      autorizadas: nuevasPracticas.length,
-      practicas: nuevasPracticas,
-    });
-  } catch (error) {
-    console.error("Error en /getPreventivePlan:", error.message);
-    res
-      .status(500)
-      .json({ success: false, message: "Error al generar el plan." });
-  }
-});
-
-// ── ALGORITMO DE REGLAS ──
-function evaluarReglas(
-  afiliado,
-  historial,
-  practicasHistoricas,
-  practicasYaAutorizadas,
-  reglas,
-) {
-  const hoy = new Date();
-  const practicasAutorizar = [];
-  const ultimoDP = historial.length > 0 ? historial[0] : null;
-  const yaAutorizadas = new Set(
-    practicasYaAutorizadas.map((p) =>
-      p.descripcion_practica.toLowerCase().trim(),
-    ),
-  );
-
-  for (const regla of reglas) {
-    const edad = parseInt(afiliado.edad) || 0;
-    if (regla.edad_desde && edad < regla.edad_desde) continue;
-    if (regla.edad_hasta && edad > regla.edad_hasta) continue;
-
-    if (regla.sexo_aplica && regla.sexo_aplica !== "ambos") {
-      const sexo = (afiliado.sexo_biologico || "").toLowerCase();
-      if (regla.sexo_aplica === "femenino" && !sexo.includes("fem")) continue;
-      if (regla.sexo_aplica === "masculino" && !sexo.includes("mas")) continue;
-    }
-
-    if (regla.condicion_campo && regla.condicion_valor) {
-      const valorAfiliado = (afiliado[regla.condicion_campo] || "")
-        .toString()
-        .toLowerCase();
-      const valoresAceptados = regla.condicion_valor
-        .toLowerCase()
-        .split(",")
-        .map((v) => v.trim());
-      if (!valoresAceptados.some((v) => valorAfiliado.includes(v))) continue;
-    }
-    if (
-      regla.historial_condicion_campo &&
-      regla.historial_condicion_valor &&
-      ultimoDP
-    ) {
-      const campoHistorial = regla.historial_condicion_campo;
-      const valorHistorial = (ultimoDP[campoHistorial] || "")
-        .toString()
-        .toLowerCase();
-      const valoresAceptados = regla.historial_condicion_valor
-        .toLowerCase()
-        .split(",")
-        .map((v) => v.trim());
-      if (!valoresAceptados.some((v) => valorHistorial.includes(v))) continue;
-    }
-    if (regla.excluir_si_historial_es && ultimoDP) {
-      const campoHistorial = mapearCampoHistorial(
-        regla.historial_condicion_campo,
-      );
-      if (campoHistorial) {
-        const valorHistorial = (ultimoDP[campoHistorial] || "").toLowerCase();
-        if (
-          valorHistorial.includes(regla.excluir_si_historial_es.toLowerCase())
-        )
-          continue;
-      }
-    }
-
-    if (regla.frecuencia_anios && regla.frecuencia_anios > 0) {
-      const ultimaRealizacion = buscarUltimaRealizacion(
-        regla.practica,
-        practicasHistoricas,
-        historial,
-      );
-      if (ultimaRealizacion) {
-        const diasDesdeUltima =
-          (hoy - new Date(ultimaRealizacion)) / (1000 * 60 * 60 * 24);
-        if (diasDesdeUltima < regla.frecuencia_anios * 365) continue;
-      }
-    }
-
-    const practicaNorm = regla.practica.toLowerCase().trim();
-    if (yaAutorizadas.has(practicaNorm)) continue;
-
-    practicasAutorizar.push({ practica: regla.practica });
-    yaAutorizadas.add(practicaNorm);
-  }
-
-  return practicasAutorizar;
-}
-
-function mapearCampoHistorial(campo) {
-  if (!campo) return null;
-  const MAPA = {
-    "Cáncer cérvico uterino - HPV": "cancer_cervico_hpv",
-    "Cáncer cérvico uterino - PAP": "cancer_cervico_pap",
-    SOMF: "somf",
-    VIH: "vih",
-    "Hepatitis B": "hepatitis_b",
-    "Hepatitis C": "hepatitis_c",
-    Chagas: "chagas",
-    Dislipemias: "dislipemias",
-    Diabetes: "diabetes",
-    "Presión Arterial": "presion_arterial",
-    Microalbuminuria: "microalbuminuria",
-    "RAC - Relación Albúmina/Creatinina": "rac_albumina_creatinina",
-  };
-  return MAPA[campo] || null;
-}
-
-function buscarUltimaRealizacion(practica, practicasHistoricas, historial) {
-  const practicaNorm = practica.toLowerCase();
-  const MAPA_TIPO = {
-    mamografia: "mamografia",
-    "ecografia mamaria": "eco_mamaria",
-    papanicolau: "papanicolau",
-    "test hpv": "papanicolau",
-    "densitometria osea": "densitometria",
-    videocolonoscopia: "vcc",
-    "sangre oculta en materia fecal": "laboratorio",
-  };
-  for (const [key, value] of Object.entries(MAPA_TIPO)) {
-    if (practicaNorm.includes(key)) {
-      const encontrada = practicasHistoricas.find(
-        (p) => p.tipo_practica === value && p.fecha,
-      );
-      if (encontrada) return encontrada.fecha;
-    }
-  }
-  return null;
-}
-app.post("/savePracticeResult", async (req, res) => {
-  const {
-    dni,
-    descripcion,
-    resultadoValor,
-    archivoBase64,
-    archivoNombre,
-    idPrestador,
-    nombrePrestador,
-  } = req.body;
-
-  const MAPA_LAB_HISTORICAS = {
-    somf: "somf",
-    "sangre oculta": "somf",
-    glucemia: "glucemia",
-    creatinina: "creatinina",
-    "filtrado glomerular": "indice_filtrado_glomerular",
-    "colesterol total": "colesterol_total",
-    hdl: "colesterol_hdl",
-    ldl: "colesterol_ldl",
-    trigliceridos: "trigliceridos",
-    vih: "hiv",
-    anti_vih: "hiv",
-    "hepatitis b antigeno": "hepatitis_b_antigeno",
-    "hepatitis b anti core": "hepatitis_b_anti_core",
-    "hepatitis c": "hepatitis_c",
-    vdrl: "vdrl",
-    psa: "psa",
-    "chagas hai": "chagas_hai",
-    "chagas eclia": "chagas_eclia",
-    "hpv genotipo 16": "hpv_genotipo_16",
-    "hpv genotipo 18": "hpv_genotipo_18",
-    "hpv otros": "hpv_otros",
-    "hemoglobina glicosilada": "hemoglobina_glicosilada",
-    microalbuminuria: "microalbuminuria",
-    "creatinina orina": "creatinina_orina_espontanea",
-    rac: "rac_albumina_creatinina",
-    "relacion albumina": "rac_albumina_creatinina",
-    proteinuria: "proteinuria",
-    clearence: "clearence_creatinina",
-  };
-
-  try {
-    let enlacePdf = null;
-    if (archivoBase64) {
-      const buffer = Buffer.from(archivoBase64, "base64");
-      const fileName = `${dni}/${Date.now()}_${archivoNombre}`;
-      const { error: uploadError } = await supabase.storage
-        .from("resultados-practicas")
-        .upload(fileName, buffer, { contentType: "application/pdf" });
-      if (!uploadError) {
-        const { data: urlData } = supabase.storage
-          .from("resultados-practicas")
-          .getPublicUrl(fileName);
-        enlacePdf = urlData.publicUrl;
-      }
-    }
-
-    const { data: existente } = await supabase
-      .from("practicas_autorizadas")
-      .select("id")
-      .eq("dni", dni)
-      .ilike("descripcion_practica", `%${descripcion}%`)
-      .eq("estado", "AUTORIZADA")
-      .single();
-
-    if (existente) {
-      await supabase
-        .from("practicas_autorizadas")
-        .update({
-          estado: "REALIZADA",
-          resultado_texto: resultadoValor,
-          enlace_pdf: enlacePdf,
-          fecha_carga: new Date().toISOString(),
-          id_prestador: idPrestador?.toString(),
-          nombre_prestador: nombrePrestador,
-        })
-        .eq("id", existente.id);
-    } else {
-      const { data: afiliado } = await supabase
-        .from("afiliados")
-        .select("nombre, apellido")
-        .eq("dni", dni)
-        .single();
-      const nombreCompleto = afiliado
-        ? `${afiliado.apellido} ${afiliado.nombre}`
-        : null;
-
-      const { error: insertError } = await supabase
-        .from("practicas_autorizadas")
-        .insert({
-          dni,
-          nombre_completo: nombreCompleto,
-          descripcion_practica: descripcion,
-          estado: "REALIZADA",
-          resultado_texto: resultadoValor,
-          enlace_pdf: enlacePdf,
-          fecha_autorizacion: new Date().toISOString(),
-          fecha_carga: new Date().toISOString(),
-          id_prestador: idPrestador?.toString(),
-          nombre_prestador: nombrePrestador,
-          observaciones: "Cargado sin autorización previa del algoritmo",
-          origen: "prestador",
-        });
-
-      if (insertError) {
-        console.error(
-          "Error insertando práctica sin autorización:",
-          insertError.message,
-        );
-        return res
-          .status(500)
-          .json({ success: false, message: "Error al guardar." });
-      }
-    }
-
-    // Actualizar practicas_historicas para prácticas de laboratorio
-    const descLower = (descripcion || "").toLowerCase();
-    const columnaHistorica = Object.entries(MAPA_LAB_HISTORICAS).find(([key]) =>
-      descLower.includes(key),
-    )?.[1];
-
-    if (columnaHistorica) {
-      const hoy = new Date().toISOString().split("T")[0];
-      const { data: historico } = await supabase
-        .from("practicas_historicas")
-        .select("id")
-        .eq("dni", dni)
-        .eq("tipo_practica", "laboratorio")
-        .eq("fecha", hoy)
-        .single();
-
-      if (historico) {
-        await supabase
-          .from("practicas_historicas")
-          .update({
-            [columnaHistorica]: resultadoValor,
-            es_individual: true,
-            ...(enlacePdf ? { link_pdf: JSON.stringify([enlacePdf]) } : {}),
-          })
-          .eq("id", historico.id);
-      } else {
-        const { data: afil } = await supabase
-          .from("afiliados")
-          .select("nombre, apellido")
-          .eq("dni", dni)
-          .single();
-        await supabase.from("practicas_historicas").insert({
-          dni,
-          nombre: afil?.nombre || null,
-          apellido: afil?.apellido || null,
-          tipo_practica: "laboratorio",
-          fecha: hoy,
-          prestador: nombrePrestador,
-          es_individual: true,
-          [columnaHistorica]: resultadoValor,
-          link_pdf: JSON.stringify(enlacePdf ? [enlacePdf] : []),
-        });
-      }
-    }
-
-    return res.json({
-      success: true,
-      message: "Práctica guardada correctamente.",
-    });
-  } catch (error) {
-    console.error("Error en /savePracticeResult:", error.message);
-    res.status(500).json({ success: false, message: "Error al guardar." });
-  }
-});
-// ── DATOS AFILIADO PARA SEMÁFORO ──
-app.get("/getDatosAfiliado/:dni", async (req, res) => {
-  try {
-    const { data: afiliado } = await supabase
-      .from("afiliados")
-      .select("edad, sexo_biologico")
-      .eq("dni", req.params.dni)
-      .single();
-
-    if (!afiliado) return res.json({ success: false });
-    res.json({ success: true, afiliado });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Error de conexión." });
-  }
-});
-
-// ── FACTURACIÓN ──
-app.get("/getFacturacion/:idPrestador/:mes/:anio", async (req, res) => {
-  try {
-    const { idPrestador, mes, anio } = req.params;
-    const { data, error } = await supabase
-      .from("practicas_autorizadas")
-      .select("*")
-      .eq("id_prestador", idPrestador)
-      .eq("estado", "REALIZADA")
-      .neq("estado_facturacion", "FACTURADA");
-
-    if (error) throw error;
-
-    const practicasFiltradas = (data || []).filter((p) => {
-      if (!p.fecha_carga) return false;
-      const fecha = new Date(p.fecha_carga);
-      return (
-        fecha.getMonth() + 1 === parseInt(mes) &&
-        fecha.getFullYear() === parseInt(anio)
-      );
-    });
-
-    res.json({
-      success: true,
-      practicas: practicasFiltradas,
-      total: practicasFiltradas.length,
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Error de conexión." });
-  }
-});
-
-app.post("/marcarFacturadas", async (req, res) => {
-  try {
-    const { idPrestador, practicas } = req.body;
-    let marcadas = 0;
-
-    for (const p of practicas) {
-      const { data: existente } = await supabase
-        .from("practicas_autorizadas")
-        .select("id")
-        .eq("dni", p.dni)
-        .ilike("descripcion_practica", p.descripcion)
-        .eq("id_prestador", idPrestador)
-        .single();
-
-      if (existente) {
-        await supabase
-          .from("practicas_autorizadas")
-          .update({ estado_facturacion: "FACTURADA" })
-          .eq("id", existente.id);
-        marcadas++;
-      }
-    }
-
-    res.json({ success: true, marcadas });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Error de conexión." });
-  }
-});
-
-// ── GOOGLE DRIVE: LISTAR PDFs DE LABORATORIO ──
-const { google } = require("googleapis");
-function getDriveClient() {
-  const jsonStr = Buffer.from(
-    process.env.GOOGLE_SERVICE_ACCOUNT_JSON_B64,
-    "base64",
-  ).toString("utf-8");
-  const credentials = JSON.parse(jsonStr);
-  const auth = new google.auth.GoogleAuth({
-    credentials,
-    scopes: ["https://www.googleapis.com/auth/drive.readonly"],
-  });
-  return google.drive({ version: "v3", auth });
-}
-
-app.get("/listarPDFsLaboratorio", async (req, res) => {
-  try {
-    const drive = getDriveClient();
-
-    // Buscar la carpeta "laboratorio" por nombre
-    const carpetaRes = await drive.files.list({
-      q: `name = 'laboratorio' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-      fields: "files(id, name)",
-      pageSize: 5,
-    });
-
-    if (!carpetaRes.data.files.length) {
-      return res.json({
-        success: false,
-        message: "Carpeta laboratorio no encontrada.",
-      });
-    }
-
-    const carpetaId = carpetaRes.data.files[0].id;
-
-    // Listar PDFs directamente en esa carpeta (Mega) y subcarpetas
-    const pdfRes = await drive.files.list({
-      q: `'${carpetaId}' in parents and mimeType = 'application/pdf' and trashed = false`,
-      fields: "files(id, name, createdTime, modifiedTime)",
-      orderBy: "modifiedTime desc",
-      pageSize: 50,
-    });
-
-    // También listar subcarpetas para el Italiano
-    const subcarpetasRes = await drive.files.list({
-      q: `'${carpetaId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-      fields: "files(id, name)",
-    });
-
-    let todosPDFs = pdfRes.data.files.map((f) => ({
-      ...f,
-      carpeta: "laboratorio",
-    }));
-
-    // PDFs dentro de subcarpetas
-    for (const sub of subcarpetasRes.data.files) {
-      if (sub.name.toLowerCase().includes("atem")) continue; // ignorar ATEM
-
-      const subPDFs = await drive.files.list({
-        q: `'${sub.id}' in parents and mimeType = 'application/pdf' and trashed = false`,
-        fields: "files(id, name, createdTime, modifiedTime)",
-        orderBy: "modifiedTime desc",
-        pageSize: 50,
-      });
-      subPDFs.data.files.forEach((f) => {
-        todosPDFs.push({ ...f, carpeta: sub.name });
-      });
-    }
-
-    res.json({ success: true, archivos: todosPDFs });
-  } catch (error) {
-    console.error("Error listando PDFs Drive:", error.message);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// ── GOOGLE DRIVE: DESCARGAR Y EXTRAER TEXTO DE UN PDF ──
-app.get("/procesarPDFDrive/:fileId", async (req, res) => {
-  try {
-    const drive = getDriveClient();
-    const pdfParse = require("pdf-parse").default || require("pdf-parse");
-
-    // Descargar el PDF como buffer
-    const response = await drive.files.get(
-      { fileId: req.params.fileId, alt: "media" },
-      { responseType: "arraybuffer" },
-    );
-
-    const buffer = Buffer.from(response.data);
-    console.log("Tamaño del buffer:", buffer.length, "bytes");
-    console.log("Primeros bytes:", buffer.slice(0, 10).toString());
-    const pdfData = await pdfParse(buffer);
-
-    res.json({
-      success: true,
-      texto: pdfData.text,
-      paginas: pdfData.numpages,
-    });
-  } catch (error) {
-    console.error("Error procesando PDF Drive:", error.message);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// ── EXTRAER TEXTO DE PDF SUBIDO ──
-app.post("/extraerTextoPDF", async (req, res) => {
-  try {
-    const { archivoBase64 } = req.body;
-    if (!archivoBase64) {
-      return res.json({
-        success: false,
-        message: "No se recibió ningún archivo.",
-      });
-    }
-
-    const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
-    const buffer = Buffer.from(archivoBase64, "base64");
-    const data = new Uint8Array(buffer);
-
-    const pdf = await pdfjsLib.getDocument({ data }).promise;
-    let textoCompleto = "";
-
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      const textoPagina = content.items.map((item) => item.str).join(" ");
-      textoCompleto += textoPagina + "\n";
-    }
-
-    res.json({ success: true, texto: textoCompleto, paginas: pdf.numPages });
-  } catch (error) {
-    console.error("Error extrayendo texto de PDF:", error.message);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-app.post("/verificarPracticasDuplicadas", async (req, res) => {
-  try {
-    const { dni, practicas } = req.body;
-    const duplicadas = [];
-
-    for (const practica of practicas) {
-      const { data } = await supabase
-        .from("practicas_autorizadas")
-        .select("id")
-        .eq("dni", dni)
-        .ilike("descripcion_practica", `%${practica.descripcion}%`)
-        .eq("estado", "REALIZADA");
-
-      if (data && data.length > 0) {
-        duplicadas.push(practica.descripcion);
-      }
-    }
-
-    res.json({ success: true, duplicadas });
-  } catch (e) {
-    res.status(500).json({ success: false, duplicadas: [] });
-  }
-});
-
-app.get("/api/mi-actividad/:mes/:anio", async (req, res) => {
-  const { mes, anio } = req.params;
-  const nombrePrestador = req.query.nombre;
-
-  const fechaInicio = `${anio}-${mes.toString().padStart(2, "0")}-01`;
-  const fechaFin = new Date(anio, mes, 0).toISOString().split("T")[0];
-
-  try {
-    const { data: cargadas } = await supabase
-      .from("practicas_autorizadas")
-      .select(
-        "dni, nombre_completo, descripcion_practica, fecha_carga, nombre_prestador",
-      )
-      .eq("estado", "REALIZADA")
-      .eq("nombre_prestador", nombrePrestador)
-      .gte("fecha_carga", fechaInicio)
-      .lte("fecha_carga", fechaFin)
-      .order("fecha_carga", { ascending: false });
-
-    const { data: pendientes } = await supabase
-      .from("practicas_autorizadas")
-      .select("dni, nombre_completo, descripcion_practica")
-      .eq("estado", "AUTORIZADA")
-      .eq("nombre_prestador", nombrePrestador);
-
-    res.json({
-      success: true,
-      cargadas: cargadas || [],
-      pendientes: pendientes || [],
-    });
-  } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
-  }
-});
-app.delete("/eliminarPractica/:id", async (req, res) => {
-  try {
-    const { error } = await supabase
-      .from("practicas_autorizadas")
-      .delete()
-      .eq("id", req.params.id);
-    if (error) throw error;
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
-  }
-});
-app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
-  const { dni, modulo, psa, hpv, somf, idPrestador, nombrePrestador } =
-    req.body;
-
-  const hoy = new Date().toISOString().split("T")[0];
-  const seMarcoModulo = !!modulo;
-
-  try {
-    const { data: registro } = await supabase
-      .from("tablero_dia")
-      .select("id")
-      .eq("dni", dni)
-      .gte("fecha", hoy)
-      .lte("fecha", hoy)
-      .maybeSingle();
-
-    if (registro) {
-      await supabase
-        .from("tablero_dia")
-        .update({
-          // El círculo "LAB" del tablero solo debe quedar verde si se marcó Módulo
-          bio_paso: seMarcoModulo,
-          bio_modulo: modulo || null,
-          bio_psa: !!psa,
-          bio_hpv: !!hpv,
-          bio_somf: !!somf,
-          bio_cargado_analisis: true,
-        })
-        .eq("id", registro.id);
-    }
-
-    // El código facturable (679900 / B040103) solo corresponde si se marcó
-    // Módulo o HPV — SOMF y PSA solos no lo disparan.
-    if (seMarcoModulo || hpv) {
-      const { data: yaExiste } = await supabase
-        .from("practicas_autorizadas")
-        .select("id")
-        .eq("dni", dni)
-        .eq("descripcion_practica", "Práctica bioquímica")
-        .eq("id_prestador", idPrestador?.toString())
-        .gte("fecha_carga", `${hoy}T00:00:00`)
-        .maybeSingle();
-
-      if (!yaExiste) {
-        const { data: afiliado } = await supabase
-          .from("afiliados")
-          .select("nombre, apellido")
-          .eq("dni", dni)
-          .single();
-
-        await supabase.from("practicas_autorizadas").insert({
-          dni,
-          nombre_completo: afiliado
-            ? `${afiliado.apellido} ${afiliado.nombre}`
-            : null,
-          descripcion_practica: "Práctica bioquímica",
-          estado: "REALIZADA",
-          fecha_autorizacion: hoy,
-          fecha_carga: new Date().toISOString(),
-          id_prestador: idPrestador?.toString(),
-          nombre_prestador: nombrePrestador,
-        });
-      }
-    }
-
-    // 679915 (PSA) — se dispara solo por marcar PSA, con o sin módulo,
-    // exclusivo a SIOS (sin código interno de pago asociado).
-    if (psa) {
-      const { data: yaExistePsa } = await supabase
-        .from("practicas_autorizadas")
-        .select("id")
-        .eq("dni", dni)
-        .eq("descripcion_practica", "PSA (Antígeno prostático específico)")
-        .eq("id_prestador", idPrestador?.toString())
-        .gte("fecha_carga", `${hoy}T00:00:00`)
-        .maybeSingle();
-
-      if (!yaExistePsa) {
-        const { data: afiliadoPsa } = await supabase
-          .from("afiliados")
-          .select("nombre, apellido")
-          .eq("dni", dni)
-          .single();
-
-        await supabase.from("practicas_autorizadas").insert({
-          dni,
-          nombre_completo: afiliadoPsa
-            ? `${afiliadoPsa.apellido} ${afiliadoPsa.nombre}`
-            : null,
-          descripcion_practica: "PSA (Antígeno prostático específico)",
-          estado: "REALIZADA",
-          fecha_autorizacion: hoy,
-          fecha_carga: new Date().toISOString(),
-          id_prestador: idPrestador?.toString(),
-          nombre_prestador: nombrePrestador,
-        });
-      }
-    }
-
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
-  }
-});
-
-// ── KITS HPV / SOMF (recepción, compartido con enfermería) ──
-app.get("/api/kits-estado/:dni", async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from("kits_seguimiento")
-      .select("*")
-      .eq("dni", req.params.dni);
-    if (error) throw error;
-    res.json({ success: true, kits: data || [] });
-  } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
-  }
-});
-
-app.post("/api/kits/recibir", async (req, res) => {
-  const { dni, tipo_kit, recibido_por } = req.body;
-  if (!dni || !tipo_kit) {
-    return res.status(400).json({ success: false, message: "Faltan datos." });
-  }
-  try {
-    const { data: existente } = await supabase
-      .from("kits_seguimiento")
-      .select("id")
-      .eq("dni", dni)
-      .eq("tipo_kit", tipo_kit)
-      .maybeSingle();
-
-    if (existente) {
-      await supabase
-        .from("kits_seguimiento")
-        .update({
-          recibido: true,
-          recibido_por,
-          fecha_recepcion: new Date().toISOString(),
-        })
-        .eq("id", existente.id);
-    } else {
-      // Caso raro: recibieron un kit que nunca quedó registrado como entregado.
-      // Lo creamos igual, para no perder el dato.
-      await supabase.from("kits_seguimiento").insert({
-        dni,
-        tipo_kit,
-        recibido: true,
-        recibido_por,
-        fecha_recepcion: new Date().toISOString(),
-      });
-    }
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
-  }
-});
-const CATALOGO_SEGUIMIENTO_BIO = [
-  "antigeno prostatico especifico total - PSA",
-  "colesterol total",
-  "creatinina",
-  "creatinina, formula filtrado glomerular",
-  "formula filtrado glomerular",
+let practicaActual = null;
+let prestadorActual = null;
+let facturacionData = [];
+
+const PRACTICAS_LAB_DISPONIBLES = [
   "glucemia en ayunas",
+  "colesterol total",
   "HDL/colesterol",
-  "hemoglobina glicosilada",
   "LDL/colesterol",
+  "trigliceridos",
+  "creatinina",
+  "formula filtrado glomerular",
+  "hemoglobina glicosilada",
   "microalbuminuria",
   "RAC - creatinina orina",
   "RAC - Relación Albúmina/Creatinina",
+  "anticuerpos anti_VIH",
+  "hepatitis b antigeno de superficie_AGHB",
+  "hepatitis b anti core",
+  "hepatitis c _HCV_AC_IGG",
+  "VDRL",
+  "sifilis prueba treponemica ECLIA",
+  "test chagas HAI",
+  "test chagas ECLIA",
+  "test HPV genotipo 16",
+  "test HPV genotipo 18",
+  "test HPV otros genotipos alto riesgo",
+  "antigeno prostatico especifico total - PSA",
   "sangre oculta en materia fecal - SOMF",
-  "trigliceridos",
 ];
 
-app.get("/api/bioquimico/seguimiento/:dni", async (req, res) => {
-  const { dni } = req.params;
-  const hace30dias = new Date();
-  hace30dias.setDate(hace30dias.getDate() - 30);
+// ==========================================
+// LOGIN
+// ==========================================
+async function hacerLogin() {
+  const usuario = document.getElementById("loginUsuario").value.trim();
+  const password = document.getElementById("loginPassword").value.trim();
+  const errorDiv = document.getElementById("loginError");
+
+  if (!usuario || !password) {
+    errorDiv.textContent = "Ingrese usuario y contraseña.";
+    errorDiv.classList.remove("hidden");
+    return;
+  }
 
   try {
-    const { data } = await supabase
-      .from("practicas_autorizadas")
-      .select("descripcion_practica, fecha_autorizacion")
-      .eq("dni", dni)
-      .eq("estado", "AUTORIZADA")
-      .in("descripcion_practica", CATALOGO_SEGUIMIENTO_BIO)
-      .gte("fecha_autorizacion", hace30dias.toISOString().split("T")[0])
-      .order("fecha_autorizacion", { ascending: false });
+    const response = await fetch("/loginPrestador", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ usuario, password }),
+    });
+    const data = await response.json();
 
-    const ultimaPorDescripcion = {};
-    (data || []).forEach((d) => {
-      if (!ultimaPorDescripcion[d.descripcion_practica]) {
-        ultimaPorDescripcion[d.descripcion_practica] = d.fecha_autorizacion;
+    if (data.success) {
+      prestadorActual = data.prestador;
+      sessionStorage.setItem("prestador", JSON.stringify(prestadorActual));
+      mostrarPortal();
+    } else {
+      errorDiv.textContent =
+        data.message || "Usuario o contraseña incorrectos.";
+      errorDiv.classList.remove("hidden");
+    }
+  } catch (e) {
+    errorDiv.textContent = "Error de conexión. Intentá de nuevo.";
+    errorDiv.classList.remove("hidden");
+  }
+}
+
+function mostrarPortal() {
+  document.getElementById("pantallaLogin").classList.add("hidden");
+  document.getElementById("portalPrincipal").classList.remove("hidden");
+  document.getElementById("headerNombre").textContent = prestadorActual.nombre;
+  document.getElementById("headerAcciones").classList.remove("hidden");
+  document.getElementById("headerEspecialidad").textContent =
+    prestadorActual.especialidad +
+    (prestadorActual.ciudad ? " — " + prestadorActual.ciudad : "");
+
+  document
+    .getElementById("btnIndicacionesBio")
+    ?.classList.toggle(
+      "hidden",
+      prestadorActual.especialidad !== "Laboratorio Bioquimico",
+    );
+}
+
+function cerrarSesion() {
+  sessionStorage.removeItem("prestador");
+  sessionStorage.removeItem("modoPreventivista");
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("token");
+  if (token) {
+    fetch("https://acceso.diapreventivoiapos.com/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    }).catch(() => {});
+  }
+  window.location.href =
+    "https://acceso.diapreventivoiapos.com/login.html?redirect=prestadores";
+}
+
+// ==========================================
+// BUSCAR PRÁCTICAS
+// ==========================================
+async function buscarPracticas() {
+  const dni = document.getElementById("dniSearch").value.trim();
+  const lista = document.getElementById("listaPracticas");
+  const loading = document.getElementById("loading");
+  const infoAfiliado = document.getElementById("infoAfiliado");
+
+  if (!dni) return alert("Ingrese un DNI");
+  if (!prestadorActual) return alert("Sesión expirada. Ingrese nuevamente.");
+
+  lista.innerHTML = "";
+  infoAfiliado.classList.add("hidden");
+  loading.classList.remove("hidden");
+
+  try {
+    const iaposRes = await fetch(`/verificar-afiliado/${dni}`);
+    const iaposData = await iaposRes.json();
+
+    if (!iaposData.esActivo) {
+      loading.classList.add("hidden");
+      lista.innerHTML = `
+        <div class="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+          <i class="fas fa-times-circle text-red-500 text-2xl mb-2"></i>
+          <p class="font-bold text-red-700">DNI no corresponde a un afiliado activo de IAPOS.</p>
+          <p class="text-sm text-red-500 mt-1">Verificá el número ingresado.</p>
+        </div>`;
+      return;
+    }
+    document.getElementById("nombreAfiliado").textContent =
+      "👤 " + (iaposData.nombre || "DNI: " + dni);
+    document.getElementById("especialidadVista").textContent =
+      "Prácticas de " + prestadorActual.especialidad;
+    infoAfiliado.classList.remove("hidden");
+  } catch (e) {
+    console.warn("No se pudo verificar IAPOS, continuando...", e.message);
+  }
+
+  try {
+    const response = await fetch(
+      `/getPracticasPrestador/${dni}/${encodeURIComponent(prestadorActual.especialidad)}`,
+    );
+    const data = await response.json();
+    loading.classList.add("hidden");
+
+    if (data.success && data.practicas.length > 0) {
+      const modoCarga = document.getElementById("modoCargaLab");
+      if (prestadorActual.especialidad === "Laboratorio Bioquimico") {
+        modoCarga.classList.remove("hidden");
+      } else {
+        modoCarga.classList.add("hidden");
+      }
+
+      const pendientes = data.practicas.filter(
+        (p) => (p.estado || "").toUpperCase() === "AUTORIZADA",
+      );
+      const realizadas = data.practicas.filter(
+        (p) => (p.estado || "").toUpperCase() === "REALIZADA",
+      );
+
+      if (pendientes.length > 0) {
+        const tituloPendientes = document.createElement("h3");
+        tituloPendientes.className =
+          "font-bold text-gray-600 text-sm uppercase tracking-wide mt-2 mb-2";
+        tituloPendientes.innerHTML = `<i class="fas fa-clock text-blue-500 mr-1"></i> Pendientes de carga (${pendientes.length})`;
+        lista.appendChild(tituloPendientes);
+
+        pendientes.forEach((p) => {
+          const div = document.createElement("div");
+          div.className =
+            "bg-white p-4 rounded-lg shadow border-l-4 border-blue-600 flex justify-between items-center";
+
+          const info = document.createElement("div");
+          info.innerHTML = `
+            <p class="font-bold text-gray-800">${p.descripcion_practica}</p>
+            <p class="text-xs text-gray-400">Cód: ${p.codigo_prestacion || "S/C"}</p>`;
+
+          const btn = document.createElement("button");
+          btn.className =
+            "bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700";
+          btn.textContent = "CARGAR";
+          btn.addEventListener("click", function () {
+            abrirModal(p.codigo_prestacion, p.descripcion_practica);
+          });
+
+          div.appendChild(info);
+          div.appendChild(btn);
+          lista.appendChild(div);
+        });
+      }
+
+      if (realizadas.length > 0) {
+        const tituloRealizadas = document.createElement("h3");
+        tituloRealizadas.className =
+          "font-bold text-gray-600 text-sm uppercase tracking-wide mt-4 mb-2";
+        tituloRealizadas.innerHTML = `<i class="fas fa-check-circle text-green-500 mr-1"></i> Ya cargadas (${realizadas.length})`;
+        lista.appendChild(tituloRealizadas);
+
+        realizadas.forEach((p) => {
+          const div = document.createElement("div");
+          div.className =
+            "bg-gray-50 p-4 rounded-lg border border-gray-200 border-l-4 border-l-green-500 flex justify-between items-center opacity-75";
+
+          const infoTexto = document.createElement("div");
+          infoTexto.innerHTML = `
+            <p class="font-bold text-gray-600">${p.descripcion_practica}</p>
+            <p class="text-xs text-gray-400">
+              Cargada: ${p.fecha_carga ? new Date(p.fecha_carga).toLocaleDateString("es-AR") : "S/F"}
+            </p>`;
+          div.appendChild(infoTexto);
+
+          const derecha = document.createElement("div");
+          derecha.className = "flex items-center gap-2";
+          if (p.enlace_pdf) {
+            const btnVer = document.createElement("a");
+            btnVer.href = p.enlace_pdf;
+            btnVer.target = "_blank";
+            btnVer.rel = "noopener noreferrer";
+            btnVer.className =
+              "bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-bold hover:bg-blue-200";
+            btnVer.innerHTML = '<i class="fas fa-file-pdf mr-1"></i> Ver PDF';
+            derecha.appendChild(btnVer);
+          }
+
+          const badge = document.createElement("span");
+          badge.className =
+            "bg-green-100 text-green-700 px-3 py-1 rounded-full text-sm font-bold";
+          badge.innerHTML = "✓ REALIZADA";
+          derecha.appendChild(badge);
+
+          const btnEliminar = document.createElement("button");
+          btnEliminar.className =
+            "bg-red-100 text-red-700 px-3 py-1 rounded-full text-sm font-bold hover:bg-red-200";
+          btnEliminar.innerHTML = '<i class="fas fa-trash mr-1"></i>Eliminar';
+          btnEliminar.addEventListener("click", async function () {
+            if (
+              !confirm(
+                `¿Confirmás borrar la práctica "${p.descripcion_practica}"? Esta acción no se puede deshacer.`,
+              )
+            )
+              return;
+            try {
+              const res = await fetch(`/eliminarPractica/${p.id}`, {
+                method: "DELETE",
+              });
+              const data = await res.json();
+              if (data.success) {
+                alert("✅ Práctica eliminada correctamente.");
+                buscarPracticas();
+              } else {
+                alert("Error al eliminar: " + data.message);
+              }
+            } catch (e) {
+              alert("Error de conexión.");
+            }
+          });
+          derecha.appendChild(btnEliminar);
+
+          div.appendChild(derecha);
+          lista.appendChild(div);
+        });
+      }
+
+      // ── BOTÓN AGREGAR PRÁCTICA — siempre visible para laboratorio ──
+      if (prestadorActual.especialidad === "Laboratorio Bioquimico") {
+        const btnAgregar = document.createElement("button");
+        btnAgregar.className =
+          "mt-4 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-purple-700 w-full";
+        btnAgregar.innerHTML =
+          '<i class="fas fa-plus mr-1"></i> Agregar práctica no autorizada';
+        btnAgregar.addEventListener("click", abrirSelectorPractica);
+        lista.appendChild(btnAgregar);
+      }
+    } else {
+      loading.classList.add("hidden");
+
+      if (prestadorActual.especialidad === "Biopsias") {
+        lista.innerHTML = "";
+        const div = document.createElement("div");
+        div.className =
+          "bg-white p-4 rounded-lg shadow border-l-4 border-purple-600 flex justify-between items-center";
+        div.innerHTML = `
+          <div>
+            <p class="font-bold text-gray-800">Informe de Biopsia / Anatomía Patológica</p>
+            <p class="text-xs text-gray-400">No requiere autorización previa — cargá el resultado directamente.</p>
+          </div>`;
+        const btn = document.createElement("button");
+        btn.className =
+          "bg-purple-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-purple-700";
+        btn.textContent = "CARGAR BIOPSIA";
+        btn.addEventListener("click", function () {
+          abrirModal(null, "Biopsia");
+        });
+        div.appendChild(btn);
+        lista.appendChild(div);
+        return;
+      }
+
+      loading.classList.remove("hidden");
+      lista.innerHTML = "";
+      try {
+        await fetch(`/getPreventivePlan/${dni}`);
+        const response2 = await fetch(
+          `/getPracticasPrestador/${dni}/${encodeURIComponent(prestadorActual.especialidad)}`,
+        );
+        const data2 = await response2.json();
+        loading.classList.add("hidden");
+
+        if (data2.success && data2.practicas.length > 0) {
+          buscarPracticas();
+        } else {
+          const msg = document.createElement("div");
+          msg.className =
+            "bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center";
+          msg.innerHTML = `
+            <i class="fas fa-info-circle text-yellow-500 text-2xl mb-2"></i>
+            <p class="text-gray-600">No hay prácticas autorizadas por el algoritmo para este afiliado
+            en la especialidad <strong>${prestadorActual.especialidad}</strong>.</p>
+            <p class="text-sm text-gray-400 mt-2">Podés cargar igual usando el botón de abajo.</p>`;
+          lista.appendChild(msg);
+
+          if (prestadorActual.especialidad === "Laboratorio Bioquimico") {
+            const btnLab = document.createElement("button");
+            btnLab.className =
+              "mt-4 bg-blue-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-700 w-full";
+            btnLab.innerHTML =
+              '<i class="fas fa-flask mr-2"></i> Cargar resultados de laboratorio';
+            btnLab.addEventListener("click", function () {
+              modoCargaPDF();
+            });
+            lista.appendChild(btnLab);
+
+            const btnAgregarExtra = document.createElement("button");
+            btnAgregarExtra.className =
+              "mt-2 bg-purple-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-purple-700 w-full";
+            btnAgregarExtra.innerHTML =
+              '<i class="fas fa-plus mr-2"></i> Agregar práctica manualmente';
+            btnAgregarExtra.addEventListener("click", abrirSelectorPractica);
+            lista.appendChild(btnAgregarExtra);
+          }
+        }
+      } catch (e) {
+        loading.classList.add("hidden");
+        alert("Error al generar prácticas.");
+      }
+    }
+  } catch (e) {
+    loading.classList.add("hidden");
+    alert("Error al conectar con el servidor.");
+  }
+}
+
+async function guardarExtraccionBio(dni) {
+  const btn = document.getElementById("btn-guardar-extraccion-bio");
+  const msg = document.getElementById("msg-extraccion-bio");
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Guardando...';
+
+  const payload = {
+    dni,
+    modulo: document.getElementById("bio_modulo_input").value,
+    psa: document.getElementById("bio_psa_input").checked,
+    hpv: document.getElementById("bio_hpv_input").checked,
+    somf: document.getElementById("bio_somf_input").checked,
+    resultado_somf: document.getElementById("bio_resultado_somf_input").value,
+    hemoglobina: document.getElementById("bio_hemoglobina_input").checked,
+    orina: document.getElementById("bio_orina_input").checked,
+    idPrestador: prestadorActual.id,
+    nombrePrestador: prestadorActual.nombre,
+  };
+
+  try {
+    const res = await fetch("/api/bioquimico/registrar-extraccion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.success) {
+      msg.className = "text-xs mt-2 text-green-600 font-bold";
+      msg.textContent = "✅ Guardado correctamente.";
+      btn.innerHTML = '<i class="fas fa-check mr-2"></i>Guardado';
+    } else {
+      throw new Error(data.message || "Error al guardar");
+    }
+  } catch (e) {
+    msg.className = "text-xs mt-2 text-red-600 font-bold";
+    msg.textContent = "Error: " + e.message;
+    btn.disabled = false;
+    btn.innerHTML =
+      '<i class="fas fa-save mr-2"></i>Guardar y facturar práctica bioquímica';
+  }
+}
+// ==========================================
+// MODAL CARGA INDIVIDUAL
+// ==========================================
+function abrirModal(codigo, descripcion) {
+  practicaActual = { codigo, descripcion };
+  document.getElementById("modalTitulo").textContent = descripcion;
+  document.getElementById("resultadoValor").value = "";
+  document.getElementById("archivoPdf").value = "";
+  const linkInput = document.getElementById("linkDrivePractica");
+  if (linkInput) linkInput.value = "";
+  document.getElementById("modalCarga").classList.remove("hidden");
+}
+
+function cerrarModal() {
+  document.getElementById("modalCarga").classList.add("hidden");
+  document.getElementById("resultadoValor").value = "";
+  document.getElementById("archivoPdf").value = "";
+  const linkInput = document.getElementById("linkDrivePractica");
+  if (linkInput) linkInput.value = "";
+}
+
+// ==========================================
+// SELECTOR DE PRÁCTICA MANUAL
+// ==========================================
+function abrirSelectorPractica() {
+  const lista = document.getElementById("listaPracticas");
+
+  const existing = document.getElementById("selectorPracticaManual");
+  if (existing) existing.remove();
+
+  const div = document.createElement("div");
+  div.id = "selectorPracticaManual";
+  div.className =
+    "bg-white p-4 rounded-lg shadow border-l-4 border-purple-600 mt-4";
+  div.innerHTML = `
+    <p class="font-bold text-gray-700 mb-2">
+      <i class="fas fa-plus-circle text-purple-600 mr-1"></i> Seleccioná una práctica para cargar:
+    </p>
+    <select id="practicaManualSelect" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3">
+      <option value="">-- Seleccionar práctica --</option>
+      ${PRACTICAS_LAB_DISPONIBLES.map((p) => `<option value="${p}">${p}</option>`).join("")}
+    </select>
+    <div class="flex gap-2">
+      <button onclick="confirmarPracticaManual()"
+        class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-purple-700">
+        Cargar esta práctica
+      </button>
+      <button onclick="document.getElementById('selectorPracticaManual').remove()"
+        class="bg-gray-400 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-500">
+        Cancelar
+      </button>
+    </div>`;
+  lista.appendChild(div);
+}
+
+function confirmarPracticaManual() {
+  const select = document.getElementById("practicaManualSelect");
+  const descripcion = select.value;
+  if (!descripcion) return alert("Seleccioná una práctica.");
+  document.getElementById("selectorPracticaManual").remove();
+  abrirModal(null, descripcion);
+}
+
+async function guardarPractica() {
+  const valor = document.getElementById("resultadoValor").value.trim();
+  const inputArchivo = document.getElementById("archivoPdf");
+  const linkDrive = document.getElementById("linkDrivePractica")?.value.trim();
+  const dni = document.getElementById("dniSearch").value.trim();
+
+  const hayArchivo = inputArchivo.files && inputArchivo.files.length > 0;
+
+  if (!valor && !hayArchivo && !linkDrive)
+    return alert("Ingrese un resultado o adjunte un PDF.");
+
+  // Verificar si ya fue cargada
+  try {
+    const resCheck = await fetch("/verificarPracticasDuplicadas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dni: dni,
+        practicas: [{ descripcion: practicaActual.descripcion }],
+      }),
+    });
+    const checkData = await resCheck.json();
+    if (checkData.duplicadas && checkData.duplicadas.length > 0) {
+      const confirmar = confirm(
+        `⚠️ La práctica "${practicaActual.descripcion}" ya fue cargada para este afiliado. ¿Querés cargarla de nuevo y pisar el resultado anterior?`,
+      );
+      if (!confirmar) return;
+    }
+  } catch (e) {
+    console.warn("No se pudo verificar duplicados:", e.message);
+  }
+
+  let archivoBase64 = null;
+  if (hayArchivo) {
+    try {
+      archivoBase64 = await toBase64(inputArchivo.files[0]);
+    } catch (e) {
+      alert("Error al procesar el PDF.");
+      return;
+    }
+  } else if (linkDrive) {
+    try {
+      const resp = await fetch("/descargarPDFDesdeLink", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ link: linkDrive }),
+      });
+      const data = await resp.json();
+      if (!data.success) {
+        alert("Error al descargar el PDF del link: " + data.message);
+        return;
+      }
+      archivoBase64 = data.archivoBase64;
+    } catch (e) {
+      alert("Error al descargar el PDF del link.");
+      return;
+    }
+  }
+
+  const payload = {
+    dni: dni,
+    codigo: practicaActual.codigo,
+    descripcion: practicaActual.descripcion,
+    resultadoValor: valor,
+    archivoBase64: archivoBase64,
+    archivoNombre: `Resultado_${dni}_${practicaActual.descripcion}.pdf`,
+    idPrestador: prestadorActual.id,
+    nombrePrestador: prestadorActual.nombre,
+  };
+  // Verificar si ya fue cargada
+  try {
+    const resCheck = await fetch("/verificarPracticasDuplicadas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dni: dni,
+        practicas: [{ descripcion: practicaActual.descripcion }],
+      }),
+    });
+    const checkData = await resCheck.json();
+    if (checkData.duplicadas && checkData.duplicadas.length > 0) {
+      const confirmar = confirm(
+        `⚠️ La práctica "${practicaActual.descripcion}" ya fue cargada para este afiliado. ¿Querés cargarla de nuevo y pisar el resultado anterior?`,
+      );
+      if (!confirmar) return;
+    }
+  } catch (e) {
+    console.warn("No se pudo verificar duplicados:", e.message);
+  }
+  try {
+    const response = await fetch("/savePracticeResult", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const res = await response.json();
+    if (res.success) {
+      alert("✅ Cargado correctamente.");
+      cerrarModal();
+      buscarPracticas();
+    } else {
+      alert("Error: " + res.message);
+    }
+  } catch (e) {
+    alert("Error al guardar.");
+  }
+}
+
+// ==========================================
+// FACTURACIÓN
+// ==========================================
+function verFacturacion() {
+  const hoy = new Date();
+  document.getElementById("mesFact").value = hoy.getMonth() + 1;
+  document.getElementById("anioFact").value = hoy.getFullYear();
+  document.getElementById("tablaFacturacion").innerHTML = "";
+  document.getElementById("btnDescargarExcel").classList.add("hidden");
+  document.getElementById("modalFacturacion").classList.remove("hidden");
+  facturacionData = [];
+}
+
+function cerrarModalFacturacion() {
+  document.getElementById("modalFacturacion").classList.add("hidden");
+}
+
+async function generarFacturacion() {
+  const mes = document.getElementById("mesFact").value;
+  const anio = document.getElementById("anioFact").value;
+  const tablaDiv = document.getElementById("tablaFacturacion");
+
+  tablaDiv.innerHTML =
+    '<p class="text-center text-gray-500 py-4"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando...</p>';
+
+  try {
+    const response = await fetch(
+      `/getFacturacion/${prestadorActual.id}/${mes}/${anio}`,
+    );
+    const data = await response.json();
+
+    if (data.success && data.practicas.length > 0) {
+      facturacionData = data.practicas.map((p, i) => ({
+        ...p,
+        _incluir: true,
+        _index: i,
+      }));
+      renderTablaFacturacion();
+    } else {
+      tablaDiv.innerHTML = `<p class="text-center text-gray-500 py-4">No hay prácticas realizadas pendientes de facturación en ese período.</p>`;
+      document.getElementById("btnDescargarExcel").classList.add("hidden");
+    }
+  } catch (e) {
+    tablaDiv.innerHTML =
+      '<p class="text-red-500 text-center">Error al cargar datos.</p>';
+  }
+}
+
+function renderTablaFacturacion() {
+  const tablaDiv = document.getElementById("tablaFacturacion");
+  const incluidas = facturacionData.filter((p) => p._incluir);
+
+  if (incluidas.length === 0) {
+    tablaDiv.innerHTML =
+      '<p class="text-center text-gray-500 py-4">No quedan prácticas para facturar.</p>';
+    document.getElementById("btnDescargarExcel").classList.add("hidden");
+    return;
+  }
+
+  tablaDiv.innerHTML = `
+    <p class="text-sm text-gray-500 mb-3 italic">
+      <i class="fas fa-info-circle mr-1"></i>
+      Podés quitar prácticas que no vas a facturar este mes haciendo click en 
+      <span class="text-red-500 font-bold">✕</span>
+    </p>`;
+
+  const tabla = document.createElement("table");
+  tabla.className = "w-full text-sm border-collapse";
+  tabla.innerHTML = `
+    <thead>
+      <tr class="bg-blue-900 text-white">
+        <th class="p-2 text-left">Fecha</th>
+        <th class="p-2 text-left">DNI</th>
+        <th class="p-2 text-left">Afiliado</th>
+        <th class="p-2 text-left">Práctica</th>
+        <th class="p-2 text-left">Código</th>
+        <th class="p-2 text-center">Quitar</th>
+      </tr>
+    </thead>`;
+
+  const tbody = document.createElement("tbody");
+
+  incluidas.forEach((p) => {
+    const fecha = p.fecha_carga
+      ? new Date(p.fecha_carga).toLocaleDateString("es-AR")
+      : "S/F";
+    const tr = document.createElement("tr");
+    tr.className = "border-b hover:bg-gray-50";
+    tr.innerHTML = `
+      <td class="p-2">${fecha}</td>
+      <td class="p-2">${p.dni || ""}</td>
+      <td class="p-2">${p.nombre_completo || ""}</td>
+      <td class="p-2">${p.descripcion_practica || ""}</td>
+      <td class="p-2">${p.codigo_prestacion || "S/C"}</td>
+      <td class="p-2 text-center"></td>`;
+
+    const btnQuitar = document.createElement("button");
+    btnQuitar.className =
+      "text-red-500 hover:text-red-700 font-bold text-lg leading-none";
+    btnQuitar.textContent = "✕";
+    btnQuitar.addEventListener("click", function () {
+      quitarDeFacturacion(p._index);
+    });
+    tr.lastElementChild.appendChild(btnQuitar);
+    tbody.appendChild(tr);
+  });
+
+  tabla.appendChild(tbody);
+  tablaDiv.appendChild(tabla);
+
+  const total = document.createElement("p");
+  total.className = "text-right font-bold text-gray-700 mt-3";
+  total.innerHTML = `Total a facturar: <span class="text-blue-900">${incluidas.length} prácticas</span>`;
+  tablaDiv.appendChild(total);
+
+  document.getElementById("btnDescargarExcel").classList.remove("hidden");
+}
+
+function quitarDeFacturacion(index) {
+  facturacionData[index]._incluir = false;
+  renderTablaFacturacion();
+}
+
+async function descargarExcel() {
+  const incluidas = facturacionData.filter((p) => p._incluir);
+  if (!incluidas.length) return alert("No hay prácticas para facturar.");
+
+  const mes = document.getElementById("mesFact").value;
+  const anio = document.getElementById("anioFact").value;
+
+  const headers = [
+    "Fecha",
+    "DNI Afiliado",
+    "Afiliado",
+    "Práctica",
+    "Código",
+    "Prestador",
+  ];
+  const filas = incluidas.map((p) => [
+    p.fecha_carga ? new Date(p.fecha_carga).toLocaleDateString("es-AR") : "",
+    p.dni || "",
+    p.nombre_completo || "",
+    p.descripcion_practica || "",
+    p.codigo_prestacion || "",
+    prestadorActual.nombre,
+  ]);
+
+  const csvContent = [headers, ...filas]
+    .map((fila) => fila.map((celda) => `"${celda}"`).join(","))
+    .join("\n");
+
+  const blob = new Blob(["\uFEFF" + csvContent], {
+    type: "text/csv;charset=utf-8;",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `Facturacion_${prestadorActual.nombre}_${mes}_${anio}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+
+  try {
+    const practicasAMarcar = incluidas.map((p) => ({
+      dni: p.dni,
+      descripcion: p.descripcion_practica,
+    }));
+    await fetch("/marcarFacturadas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        idPrestador: prestadorActual.id,
+        practicas: practicasAMarcar,
+      }),
+    });
+    alert(
+      `✅ Planilla descargada. ${incluidas.length} prácticas marcadas como FACTURADAS.`,
+    );
+    cerrarModalFacturacion();
+  } catch (e) {
+    alert(
+      "La planilla se descargó pero hubo un error al actualizar el estado.",
+    );
+  }
+}
+
+// ==========================================
+// SEMÁFORO DE VALORES
+// ==========================================
+function evaluarSemaforo(campo, valor, datosAfiliado) {
+  if (!valor) return null;
+
+  const v = valor.toString().trim();
+  const vUpper = v.toUpperCase();
+  const vNum = parseFloat(v.replace(",", "."));
+  const edad = datosAfiliado ? parseInt(datosAfiliado.edad) || 0 : 0;
+  const sexo = datosAfiliado
+    ? (datosAfiliado.sexo_biologico || "").toLowerCase()
+    : "";
+
+  const VERDE = {
+    color: "#16a34a",
+    bg: "#dcfce7",
+    icono: "🟢",
+    texto: "Normal",
+  };
+  const AMARILLO = {
+    color: "#d97706",
+    bg: "#fef3c7",
+    icono: "🟡",
+    texto: "Límite",
+  };
+  const ROJO = {
+    color: "#dc2626",
+    bg: "#fee2e2",
+    icono: "🔴",
+    texto: "Alterado",
+  };
+
+  if (campo === "glucemia") {
+    if (isNaN(vNum)) return null;
+    const glucVal = vUpper.includes("MG") ? vNum / 1000 : vNum;
+    if (glucVal <= 1.0) return VERDE;
+    if (glucVal <= 1.25) return AMARILLO;
+    return ROJO;
+  }
+  if (campo === "colesterol_total") {
+    if (isNaN(vNum)) return null;
+    if (vNum < 200) return VERDE;
+    if (vNum < 240) return AMARILLO;
+    return ROJO;
+  }
+  if (campo === "colesterol_hdl") {
+    if (isNaN(vNum)) return null;
+    const hdlMin = sexo.includes("fem") ? 50 : 40;
+    const hdlLimite = sexo.includes("fem") ? 40 : 35;
+    if (vNum >= hdlMin) return VERDE;
+    if (vNum >= hdlLimite) return AMARILLO;
+    return ROJO;
+  }
+  if (campo === "colesterol_ldl") {
+    if (isNaN(vNum)) return null;
+    if (vNum < 130) return VERDE;
+    if (vNum < 160) return AMARILLO;
+    return ROJO;
+  }
+  if (campo === "trigliceridos") {
+    if (isNaN(vNum)) return null;
+    if (vNum < 150) return VERDE;
+    if (vNum < 200) return AMARILLO;
+    return ROJO;
+  }
+  if (campo === "creatinina") {
+    if (isNaN(vNum)) return null;
+    const creatMax = sexo.includes("fem") ? 0.9 : 1.2;
+    const creatLimite = sexo.includes("fem") ? 1.2 : 1.5;
+    if (vNum <= creatMax) return VERDE;
+    if (vNum <= creatLimite) return AMARILLO;
+    return ROJO;
+  }
+  if (campo === "indice_filtrado_glomerular") {
+    if (isNaN(vNum)) return null;
+    if (vNum >= 90) return VERDE;
+    if (vNum >= 60 && vNum < 70) return AMARILLO;
+    if (vNum >= 70) return VERDE;
+    return ROJO;
+  }
+  if (campo === "psa") {
+    if (isNaN(vNum)) return null;
+    let psaNormal, psaLimite;
+    if (edad <= 50) {
+      psaNormal = 2.0;
+      psaLimite = 3.0;
+    } else if (edad <= 60) {
+      psaNormal = 3.0;
+      psaLimite = 4.0;
+    } else if (edad <= 70) {
+      psaNormal = 4.0;
+      psaLimite = 5.0;
+    } else {
+      psaNormal = 4.5;
+      psaLimite = 6.0;
+    }
+    if (vNum <= psaNormal) return VERDE;
+    if (vNum <= psaLimite) return AMARILLO;
+    return ROJO;
+  }
+  if (campo === "hemoglobina_glicosilada") {
+    if (isNaN(vNum)) return null;
+    if (vNum < 5.7) return VERDE;
+    if (vNum < 6.5) return AMARILLO;
+    return ROJO;
+  }
+  if (
+    [
+      "hiv",
+      "hepatitis_b_antigeno_superficie",
+      "hepatitis_b_anti_core",
+      "hepatitis_c",
+      "somf",
+      "vdrl",
+      "chagas_hai",
+      "chagas_eclia",
+    ].includes(campo)
+  ) {
+    if (vUpper === "NEGATIVO" || vUpper === "NO REACTIVO") return VERDE;
+    if (vUpper === "POSITIVO" || vUpper === "REACTIVO") return ROJO;
+    return null;
+  }
+  if (campo === "sifilis_treponemica") {
+    if (vUpper === "POSITIVO" || vUpper === "REACTIVO") return ROJO;
+    if (vUpper === "NEGATIVO" || vUpper === "NO REACTIVO") return VERDE;
+    return null;
+  }
+  if (campo === "hpv_genotipo_16" || campo === "hpv_genotipo_18") {
+    if (vUpper.includes("NO DETECTABLE")) return VERDE;
+    if (vUpper.includes("DETECTABLE")) return ROJO;
+    return null;
+  }
+  if (campo === "hpv_otros") {
+    if (vUpper.includes("NO DETECTABLE")) return VERDE;
+    if (vUpper.includes("DETECTABLE"))
+      return {
+        color: "#dc2626",
+        bg: "#fee2e2",
+        icono: "🔴",
+        texto: "Otros genotipos de alto riesgo",
+      };
+    return null;
+  }
+  return null;
+}
+
+// ==========================================
+// CARGA PDF LABORATORIO - VERSIÓN CON IA (Claude)
+// ==========================================
+function modoCargaIndividual() {
+  document.getElementById("modoCargaLab").classList.add("hidden");
+}
+
+function modoCargaPDF() {
+  document.getElementById("pdfResultado").classList.add("hidden");
+  document.getElementById("pdfResultado").innerHTML = "";
+  document.getElementById("contenedorInformes").innerHTML = "";
+  agregarInforme();
+  document.getElementById("modalPDFLab").classList.remove("hidden");
+}
+
+function cerrarModalPDFLab() {
+  document.getElementById("modalPDFLab").classList.add("hidden");
+  document.getElementById("contenedorInformes").innerHTML = "";
+  document.getElementById("pdfResultado").classList.add("hidden");
+}
+
+function agregarInforme() {
+  const contenedor = document.getElementById("contenedorInformes");
+  const index = contenedor.children.length + 1;
+  const div = document.createElement("div");
+  div.className = "relative border border-gray-200 rounded-lg p-3";
+  div.innerHTML = `
+    <div class="flex justify-between items-center mb-2">
+      <label class="text-sm font-bold text-gray-600">
+        <i class="fas fa-file-pdf text-red-500 mr-1"></i>Informe ${index}
+      </label>
+      ${
+        index > 1
+          ? `<button onclick="this.closest('div.relative').remove()"
+          class="text-red-400 hover:text-red-600 text-xs">
+          <i class="fas fa-times"></i> Quitar
+        </button>`
+          : ""
+      }
+    </div>
+    <input type="file" accept="application/pdf"
+           class="archivoPDFItem w-full border border-gray-300 rounded-lg p-2
+                  text-sm file:mr-3 file:py-1 file:px-3 file:rounded-md
+                  file:border-0 file:bg-blue-50 file:text-blue-700
+                  hover:file:bg-blue-100">
+    <div class="flex items-center gap-2 my-2">
+      <div class="flex-grow border-t border-gray-200"></div>
+      <span class="text-xs text-gray-400 font-bold">O</span>
+      <div class="flex-grow border-t border-gray-200"></div>
+    </div>
+    <input type="text"
+           class="linkDriveItem w-full border border-gray-300 rounded-lg p-2 text-sm
+                  outline-none focus:ring-2 focus:ring-blue-500"
+           placeholder="Pegá el link de Google Drive del PDF (debe estar compartido como 'Cualquiera con el enlace')">
+    <p class="text-xs text-gray-400 mt-1">Subí el PDF, o pegá el link de Drive si el informe ya está guardado ahí.</p>`;
+  contenedor.appendChild(div);
+}
+
+async function procesarTodosLosInformes() {
+  const bloquesInforme = document.querySelectorAll("#contenedorInformes > div");
+  const dni = document.getElementById("dniSearch").value.trim();
+  const resultadoDiv = document.getElementById("pdfResultado");
+
+  if (!dni) return alert("Ingresá el DNI del paciente primero.");
+
+  const entradas = [];
+  bloquesInforme.forEach((bloque) => {
+    const inputArchivo = bloque.querySelector(".archivoPDFItem");
+    const inputLink = bloque.querySelector(".linkDriveItem");
+    const archivo = inputArchivo && inputArchivo.files && inputArchivo.files[0];
+    const link = inputLink && inputLink.value.trim();
+    if (archivo) entradas.push({ tipo: "archivo", archivo });
+    else if (link) entradas.push({ tipo: "link", link });
+  });
+
+  if (entradas.length === 0)
+    return alert("Subí al menos un PDF o pegá un link de Drive.");
+
+  resultadoDiv.classList.remove("hidden");
+  resultadoDiv.innerHTML = `
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+      <i class="fas fa-spinner fa-spin text-blue-600 text-2xl mb-2"></i>
+      <p class="text-blue-700">Leyendo informe${entradas.length > 1 ? "s" : ""} con IA, puede tardar unos segundos...</p>
+    </div>`;
+
+  try {
+    const resultados = [];
+    for (const entrada of entradas) {
+      let data;
+      if (entrada.tipo === "archivo") {
+        const base64 = await toBase64(entrada.archivo);
+        const response = await fetch("/leerLaboratorioPDF", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ archivoBase64: base64 }),
+        });
+        data = await response.json();
+        if (!data.success)
+          throw new Error(data.message || "Error leyendo el PDF.");
+        resultados.push({
+          valores: data.valores,
+          base64,
+          nombre: entrada.archivo.name,
+        });
+      } else {
+        const response = await fetch("/leerLaboratorioPDFDesdeLink", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ link: entrada.link }),
+        });
+        data = await response.json();
+        if (!data.success)
+          throw new Error(
+            data.message || "Error leyendo el PDF desde el link.",
+          );
+        resultados.push({
+          valores: data.valores,
+          base64: data.archivoBase64,
+          nombre: "informe_drive.pdf",
+        });
+      }
+    }
+
+    const dnisDiferentes = [];
+    resultados.forEach((r, i) => {
+      const dniDetectado = r.valores.dni_paciente;
+      if (
+        dniDetectado &&
+        dniDetectado.replace(/\D/g, "") !== dni.replace(/\D/g, "")
+      ) {
+        dnisDiferentes.push({ informe: i + 1, dniDetectado });
       }
     });
 
-    const catalogo = CATALOGO_SEGUIMIENTO_BIO.map((desc) => ({
-      descripcion: desc,
-      marcada: !!ultimaPorDescripcion[desc],
-      fecha: ultimaPorDescripcion[desc] || null,
-    }));
-    res.json({ catalogo });
-  } catch (e) {
-    res.status(500).json({ catalogo: [] });
-  }
-});
+    if (dnisDiferentes.length > 0) {
+      const mensajes = dnisDiferentes
+        .map((d) => `Informe ${d.informe}: DNI ${d.dniDetectado}`)
+        .join("\n");
+      const confirmar = confirm(
+        `⚠️ ATENCIÓN: Se detectaron informes con DNI diferente al paciente buscado (${dni}):\n\n` +
+          `${mensajes}\n\n¿Querés continuar igualmente cargando todo para el DNI ${dni}?`,
+      );
+      if (!confirmar) {
+        resultadoDiv.classList.add("hidden");
+        return;
+      }
+    }
 
-app.post("/api/bioquimico/seguimiento/marcar", async (req, res) => {
-  const { dni, descripcion } = req.body;
-  const hoy = new Date().toISOString().split("T")[0];
-  try {
-    const { data: afiliado } = await supabase
-      .from("afiliados")
-      .select("nombre, apellido")
-      .eq("dni", dni)
-      .single();
-
-    await supabase.from("practicas_autorizadas").insert({
-      dni,
-      nombre_completo: afiliado
-        ? `${afiliado.apellido} ${afiliado.nombre}`
-        : null,
-      descripcion_practica: descripcion,
-      estado: "AUTORIZADA",
-      fecha_autorizacion: hoy,
-      observaciones: "Indicado por bioquímico - seguimiento",
+    let valoresCombinados = {};
+    resultados.forEach((r) => {
+      Object.entries(r.valores).forEach(([campo, valor]) => {
+        if (campo === "dni_paciente") return;
+        if (valor && !valoresCombinados[campo])
+          valoresCombinados[campo] = valor;
+      });
     });
-    res.json({ success: true });
+
+    const valoresConDatos = Object.entries(valoresCombinados).filter(
+      ([k, v]) => v,
+    );
+    if (valoresConDatos.length === 0) {
+      resultadoDiv.innerHTML = `
+        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+          <p class="text-yellow-700">No se encontraron valores en el/los informe(s). Verificá que sean los PDFs correctos.</p>
+        </div>`;
+      return;
+    }
+
+    window._archivosPDFLab = resultados.map((r) => ({
+      base64: r.base64,
+      nombre: r.nombre,
+    }));
+
+    mostrarValoresExtraidos({
+      dni,
+      nombre: "",
+      apellido: "",
+      valores: valoresCombinados,
+    });
   } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
+    resultadoDiv.innerHTML = `
+      <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+        <p class="text-red-600">Error: ${e.message}</p>
+      </div>`;
   }
-});
-app.patch("/api/indicacion-practica/:id", async (req, res) => {
+}
+
+// ==========================================
+// MOSTRAR VALORES CON SEMÁFORO
+// ==========================================
+function mostrarValoresExtraidos(data) {
+  const resultadoDiv = document.getElementById("pdfResultado");
+
+  const ETIQUETAS = {
+    glucemia: "Glucemia",
+    creatinina: "Creatinina",
+    indice_filtrado_glomerular: "Índice Filtrado Glomerular",
+    colesterol_total: "Colesterol Total",
+    colesterol_hdl: "Colesterol HDL",
+    colesterol_ldl: "Colesterol LDL",
+    trigliceridos: "Triglicéridos",
+    hiv: "HIV",
+    hepatitis_b_antigeno_superficie: "Hepatitis B Ag Superficie",
+    hepatitis_b_anti_core: "Hepatitis B Anti Core",
+    hepatitis_c: "Hepatitis C",
+    vdrl: "VDRL",
+    sifilis_treponemica: "Sífilis - Prueba Treponémica",
+    psa: "PSA",
+    chagas_hai: "Chagas HAI",
+    chagas_eclia: "Chagas ECLIA",
+    hpv_genotipo_16: "HPV Genotipo 16",
+    hpv_genotipo_18: "HPV Genotipo 18",
+    hpv_otros: "HPV Otros Genotipos Alto Riesgo",
+    hemoglobina_glicosilada: "Hemoglobina Glicosilada",
+    microalbuminuria: "Microalbuminuria",
+    proteinuria: "Proteinuria",
+    clearence_creatinina: "Clearence Creatinina",
+    somf: "SOMF",
+    creatinina_orina_espontanea: "Creatinina Orina Espontánea",
+    rac_albumina_creatinina: "RAC - Relación Albúmina/Creatinina",
+  };
+
+  const MAPEO_PRACTICAS = {
+    glucemia: "glucemia en ayunas",
+    creatinina: "creatinina",
+    indice_filtrado_glomerular: "formula filtrado glomerular",
+    colesterol_total: "colesterol total",
+    colesterol_hdl: "HDL/colesterol",
+    colesterol_ldl: "LDL/colesterol",
+    trigliceridos: "trigliceridos",
+    hiv: "anticuerpos anti_VIH",
+    hepatitis_b_antigeno_superficie: "hepatitis b antigeno de superficie_AGHB",
+    hepatitis_b_anti_core: "hepatitis b anti core",
+    hepatitis_c: "hepatitis c _HCV_AC_IGG",
+    vdrl: "VDRL",
+    sifilis_treponemica: "sifilis prueba treponemica ECLIA",
+    psa: "antigeno prostatico especifico total - PSA",
+    chagas_hai: "test chagas HAI",
+    chagas_eclia: "test chagas ECLIA",
+    hpv_genotipo_16: "test HPV genotipo 16",
+    hpv_genotipo_18: "test HPV genotipo 18",
+    hpv_otros: "test HPV otros genotipos alto riesgo",
+    hemoglobina_glicosilada: "hemoglobina glicosilada",
+    microalbuminuria: "microalbuminuria",
+    proteinuria: "proteinuria",
+    clearence_creatinina: "clearence creatinina",
+    somf: "sangre oculta en materia fecal - SOMF",
+    creatinina_orina_espontanea: "RAC - creatinina orina",
+    rac_albumina_creatinina: "RAC - Relación Albúmina/Creatinina",
+  };
+
+  const valores = data.valores;
+  const valoresConDatos = Object.entries(valores).filter(([k, v]) => v);
+
+  buscarDatosAfiliado(data.dni).then((datosAfiliado) => {
+    const rojos = [],
+      amarillos = [],
+      verdes = [],
+      sinSemaforo = [];
+
+    valoresConDatos.forEach(([campo, valor]) => {
+      const semaforo = evaluarSemaforo(campo, valor, datosAfiliado);
+      const item = { campo, valor, semaforo };
+      if (!semaforo) sinSemaforo.push(item);
+      else if (semaforo.icono === "🔴") rojos.push(item);
+      else if (semaforo.icono === "🟡") amarillos.push(item);
+      else verdes.push(item);
+    });
+
+    const hayRojos = rojos.length > 0;
+
+    const renderFila = (item) => {
+      const { campo, valor, semaforo } = item;
+      const bg = semaforo ? semaforo.bg : "#f9fafb";
+      const color = semaforo ? semaforo.color : "#374151";
+      const icono = semaforo ? semaforo.icono : "⚪";
+      const texto = semaforo ? semaforo.texto : "";
+      return `
+        <div style="display:flex; justify-content:space-between; align-items:center; 
+                    background:${bg}; border-left:4px solid ${color};
+                    padding:8px 12px; border-radius:6px; margin-bottom:4px;">
+          <span style="color:#374151; font-size:0.85rem;">${ETIQUETAS[campo] || campo}</span>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-weight:bold; color:${color}; font-size:0.85rem;">${valor}</span>
+            <span style="font-size:0.75rem; background:white; padding:2px 6px; 
+                         border-radius:12px; color:${color}; font-weight:bold;
+                         border:1px solid ${color};">
+              ${icono} ${texto}
+            </span>
+          </div>
+        </div>`;
+    };
+
+    let html = `
+      <div class="border-t pt-3">
+        <p class="font-bold text-gray-700 mb-3">
+          Se encontraron <strong>${valoresConDatos.length}</strong> resultados.
+          ${hayRojos ? '<span class="text-red-600 ml-2">⚠️ Hay valores alterados — revisá antes de confirmar.</span>' : ""}
+        </p>`;
+
+    if (rojos.length > 0) {
+      html += `<p style="font-size:0.75rem;font-weight:bold;color:#dc2626;text-transform:uppercase;margin:8px 0 4px 0;">🔴 Valores alterados (${rojos.length})</p>`;
+      rojos.forEach((item) => {
+        html += renderFila(item);
+      });
+    }
+    if (amarillos.length > 0) {
+      html += `<p style="font-size:0.75rem;font-weight:bold;color:#d97706;text-transform:uppercase;margin:8px 0 4px 0;">🟡 Valores límite (${amarillos.length})</p>`;
+      amarillos.forEach((item) => {
+        html += renderFila(item);
+      });
+    }
+    if (verdes.length > 0) {
+      html += `<p style="font-size:0.75rem;font-weight:bold;color:#16a34a;text-transform:uppercase;margin:8px 0 4px 0;">🟢 Valores normales (${verdes.length})</p>`;
+      verdes.forEach((item) => {
+        html += renderFila(item);
+      });
+    }
+    if (sinSemaforo.length > 0) {
+      html += `<p style="font-size:0.75rem;font-weight:bold;color:#6b7280;text-transform:uppercase;margin:8px 0 4px 0;">⚪ Otros valores</p>`;
+      sinSemaforo.forEach((item) => {
+        html += renderFila(item);
+      });
+    }
+
+    window._datosPDFLab = { data, mapeo: MAPEO_PRACTICAS };
+
+    if (hayRojos) {
+      html += `
+        <div style="background:#fee2e2;border:1px solid #dc2626;border-radius:8px;padding:12px;margin-top:12px;text-align:center;">
+          <p style="color:#dc2626;font-weight:bold;margin-bottom:8px;">
+            ⚠️ Hay ${rojos.length} valor/es alterado/s. ¿Confirmás que los revisaste?
+          </p>
+          <button id="btnConfirmarPDF"
+            style="background:#dc2626;color:white;padding:10px 24px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;">
+            ✓ Revisé los valores — CONFIRMAR Y GUARDAR
+          </button>
+        </div>`;
+    } else {
+      html += `
+        <div style="text-align:center;margin-top:12px;">
+          <button id="btnConfirmarPDF"
+            style="background:#16a34a;color:white;padding:10px 24px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;">
+            ✓ CONFIRMAR Y GUARDAR TODO
+          </button>
+        </div>`;
+    }
+
+    html += `</div>`;
+    resultadoDiv.classList.remove("hidden");
+    resultadoDiv.innerHTML = html;
+
+    document.getElementById("btnConfirmarPDF").addEventListener("click", () => {
+      confirmarCargaPDFLab(window._datosPDFLab.data, window._datosPDFLab.mapeo);
+    });
+  });
+}
+
+async function buscarDatosAfiliado(dni) {
   try {
-    const { error } = await supabase
-      .from("practicas_autorizadas")
-      .update(req.body)
-      .eq("id", req.params.id);
-    if (error) throw error;
-    res.json({ success: true });
+    const response = await fetch(`/getDatosAfiliado/${dni}`);
+    const data = await response.json();
+    if (data.success) return data.afiliado;
+    return null;
   } catch (e) {
-    res.status(500).json({ success: false });
+    return null;
   }
-});
-app.get("/api/bioquimico/ultima-extraccion/:dni", async (req, res) => {
-  const { dni } = req.params;
-  const hace30dias = new Date();
-  hace30dias.setDate(hace30dias.getDate() - 30);
+}
+
+async function confirmarCargaPDFLab(data, mapeo) {
+  const valores = data.valores;
+  const dni = data.dni;
+  const resultadoDiv = document.getElementById("pdfResultado");
+
+  resultadoDiv.innerHTML = `
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+      <i class="fas fa-spinner fa-spin text-blue-600 text-2xl mb-2"></i>
+      <p class="text-blue-700">Verificando prácticas...</p>
+    </div>`;
+
+  const practicasParaGuardar = [];
+  Object.entries(valores).forEach(([campo, valor]) => {
+    if (!valor) return;
+    const descripcion = mapeo[campo];
+    if (!descripcion) return;
+    practicasParaGuardar.push({ campo, descripcion, valor });
+  });
+
+  if (practicasParaGuardar.length === 0) {
+    resultadoDiv.innerHTML = `
+      <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+        <p class="text-yellow-700">No hay prácticas para guardar.</p>
+      </div>`;
+    return;
+  }
+
+  // Verificar duplicados ANTES de guardar
+  try {
+    const resCheck = await fetch("/verificarPracticasDuplicadas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dni, practicas: practicasParaGuardar }),
+    });
+    const checkData = await resCheck.json();
+
+    if (checkData.duplicadas && checkData.duplicadas.length > 0) {
+      const listaDuplicadas = checkData.duplicadas
+        .map((p) => `• ${p}`)
+        .join("\n");
+
+      resultadoDiv.innerHTML = `
+        <div class="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-5">
+          <p class="font-bold text-yellow-800 text-lg mb-3">
+            ⚠️ Las siguientes prácticas ya fueron cargadas para este paciente:
+          </p>
+          <div class="bg-white rounded-lg p-3 mb-4 text-sm text-gray-700">
+            ${checkData.duplicadas.map((p) => `<p class="py-1 border-b border-gray-100">• ${p}</p>`).join("")}
+          </div>
+          <p class="text-yellow-700 text-sm mb-4">
+            Si guardás de nuevo, se pisará el resultado anterior. ¿Querés continuar igual?
+          </p>
+          <div class="flex gap-3 justify-center">
+            <button id="btnContinuarIgual"
+              class="bg-yellow-500 hover:bg-yellow-600 text-white px-5 py-2 rounded-lg font-bold">
+              Continuar y pisar
+            </button>
+            <button id="btnCancelarDuplicado"
+              class="bg-gray-400 hover:bg-gray-500 text-white px-5 py-2 rounded-lg font-bold">
+              Cancelar
+            </button>
+          </div>
+        </div>`;
+
+      document
+        .getElementById("btnCancelarDuplicado")
+        .addEventListener("click", () => {
+          resultadoDiv.innerHTML = "";
+          resultadoDiv.classList.add("hidden");
+        });
+
+      document
+        .getElementById("btnContinuarIgual")
+        .addEventListener("click", () => {
+          ejecutarGuardadoLab(dni, practicasParaGuardar, valores, resultadoDiv);
+        });
+      return;
+    }
+  } catch (e) {
+    console.warn("No se pudo verificar duplicados, continuando...", e.message);
+  }
+
+  ejecutarGuardadoLab(dni, practicasParaGuardar, valores, resultadoDiv);
+}
+
+async function ejecutarGuardadoLab(
+  dni,
+  practicasParaGuardar,
+  valores,
+  resultadoDiv,
+) {
+  resultadoDiv.innerHTML = `
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+      <i class="fas fa-spinner fa-spin text-blue-600 text-2xl mb-2"></i>
+      <p class="text-blue-700">Guardando prácticas...</p>
+    </div>`;
 
   try {
-    const { data } = await supabase
-      .from("practicas_autorizadas")
-      .select("fecha_carga, nombre_prestador")
-      .eq("dni", dni)
-      .eq("descripcion_practica", "Práctica bioquímica")
-      .gte("fecha_carga", hace30dias.toISOString())
-      .order("fecha_carga", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const response = await fetch("/savePracticasLaboratorio", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dni,
+        practicas: practicasParaGuardar,
+        valoresCompletos: valores,
+        archivosPDF: window._archivosPDFLab || [],
+        idPrestador: prestadorActual.id,
+        nombrePrestador: prestadorActual.nombre,
+      }),
+    });
 
-    res.json({ ultima: data || null });
+    const res = await response.json();
+    let mensaje = "";
+    if (res.success) {
+      mensaje = `<p class="font-bold text-green-700">✅ ${res.guardadas} prácticas guardadas.</p>`;
+    } else {
+      mensaje = `<p class="text-red-600">Error: ${res.message}</p>`;
+    }
+
+    resultadoDiv.innerHTML = `
+      <div class="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+        <i class="fas fa-check-circle text-green-600 text-2xl mb-2"></i>
+        ${mensaje}
+      </div>`;
+
+    setTimeout(() => {
+      cerrarModalPDFLab();
+      buscarPracticas();
+    }, 2000);
   } catch (e) {
-    res.status(500).json({ ultima: null });
+    resultadoDiv.innerHTML = `
+      <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+        <p class="text-red-600">Error de conexión. Intentá de nuevo.</p>
+      </div>`;
   }
+}
+function mapearEspecialidad(rol) {
+  const MAPA = {
+    bioquimico: "Laboratorio Bioquimico",
+    laboratorio: "Laboratorio Bioquimico",
+    imagenes: "Diagnostico por Imagenes",
+    gastro: "Gastroenterologia",
+    densitometria: "Densitometria",
+    biopsias: "Biopsias",
+    papanicolau: "Papanicolau",
+    oftalmologia: "Oftalmologia",
+    espirometria: "Espirometria",
+  };
+  return MAPA[rol] || "Medicina";
+}
+
+// ==========================================
+// UTILIDADES
+// ==========================================
+const toBase64 = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = (error) => reject(error);
+  });
+
+document.addEventListener("DOMContentLoaded", () => {
+  if (window.dpEsPreventivista) {
+    document.getElementById("selectorPreventivista").classList.remove("hidden");
+  } else {
+    prestadorActual = {
+      nombre: window.dpProfesional,
+      especialidad: mapearEspecialidad(window.dpRol),
+      id: window.dpRol,
+    };
+    mostrarPortal();
+  }
+
+  document
+    .getElementById("btnGuardarPractica")
+    .addEventListener("click", guardarPractica);
+  document.getElementById("dniSearch")?.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") buscarPracticas();
+  });
 });
-app.listen(PORT, () =>
-  console.log(`Portal Prestadores corriendo en http://localhost:${PORT}`),
-);
+// ==========================================
+// MI ACTIVIDAD
+// ==========================================
+function mostrarTabPrestador(tab) {
+  document.getElementById("contenido-buscar").classList.add("hidden");
+  document.getElementById("contenido-actividad").classList.add("hidden");
+  document
+    .getElementById("contenido-indicaciones-bio")
+    ?.classList.add("hidden");
+  document.getElementById(`contenido-${tab}`).classList.remove("hidden");
+}
+
+async function cargarActividad() {
+  const mes = document.getElementById("actividadMes").value;
+  const anio = document.getElementById("actividadAnio").value;
+  const lista = document.getElementById("listaActividad");
+
+  lista.innerHTML =
+    '<div class="text-center py-8 text-gray-400"><i class="fas fa-spinner fa-spin text-2xl mb-2"></i><p>Cargando...</p></div>';
+
+  try {
+    const res = await fetch(
+      `/api/mi-actividad/${mes}/${anio}?nombre=${encodeURIComponent(prestadorActual.nombre)}`,
+    );
+    const data = await res.json();
+
+    document.getElementById("actividadCargadas").textContent =
+      data.cargadas?.length || 0;
+    document.getElementById("actividadPendientes").textContent =
+      data.pendientes?.length || 0;
+
+    lista.innerHTML = "";
+
+    if (data.cargadas?.length > 0) {
+      lista.innerHTML += `<h3 class="font-bold text-green-700 text-sm uppercase mb-2 mt-2">
+                <i class="fas fa-check-circle mr-1"></i> Cargadas este mes (${data.cargadas.length})</h3>`;
+      data.cargadas.forEach((p) => {
+        lista.innerHTML += `
+                    <div class="bg-green-50 border-l-4 border-green-500 rounded-lg p-3 mb-2 flex justify-between items-center">
+                        <div>
+                            <p class="font-bold text-gray-800 text-sm">${p.nombre_completo || p.dni}</p>
+                            <p class="text-xs text-gray-500">DNI: ${p.dni} — ${p.descripcion_practica}</p>
+                            <p class="text-xs text-gray-400">${p.fecha_carga ? new Date(p.fecha_carga).toLocaleDateString("es-AR") : "S/F"}</p>
+                        </div>
+                        <span class="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full font-bold">✓ REALIZADA</span>
+                    </div>`;
+      });
+    }
+
+    if (data.pendientes?.length > 0) {
+      lista.innerHTML += `<h3 class="font-bold text-yellow-700 text-sm uppercase mb-2 mt-4">
+                <i class="fas fa-clock mr-1"></i> Pendientes de carga (${data.pendientes.length})</h3>`;
+      data.pendientes.forEach((p) => {
+        lista.innerHTML += `
+                    <div class="bg-yellow-50 border-l-4 border-yellow-500 rounded-lg p-3 mb-2 flex justify-between items-center">
+                        <div>
+                            <p class="font-bold text-gray-800 text-sm">${p.nombre_completo || p.dni}</p>
+                            <p class="text-xs text-gray-500">DNI: ${p.dni} — ${p.descripcion_practica}</p>
+                        </div>
+                        <button onclick="document.getElementById('dniSearch').value='${p.dni}'; mostrarTabPrestador('buscar'); buscarPracticas();"
+                            class="bg-blue-600 text-white text-xs px-3 py-1 rounded-lg font-bold hover:bg-blue-700">
+                            Cargar
+                        </button>
+                    </div>`;
+      });
+    }
+
+    if (!data.cargadas?.length && !data.pendientes?.length) {
+      lista.innerHTML =
+        '<p class="text-center text-gray-400 py-8">No hay actividad para este período.</p>';
+    }
+  } catch (e) {
+    lista.innerHTML =
+      '<p class="text-red-500 text-center">Error al cargar actividad.</p>';
+  }
+}
+async function buscarIndicacionesBio() {
+  const dni = document.getElementById("dniIndicacionesBio").value.trim();
+  const contenedor = document.getElementById("contenedorIndicacionesBio");
+  if (!dni) return alert("Ingrese un DNI");
+  if (!prestadorActual) return alert("Sesión expirada. Ingrese nuevamente.");
+
+  contenedor.innerHTML =
+    '<p class="text-center text-gray-400 py-6"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando...</p>';
+
+  try {
+    const iaposRes = await fetch(`/verificar-afiliado/${dni}`);
+    const iaposData = await iaposRes.json();
+    if (!iaposData.esActivo) {
+      contenedor.innerHTML = `
+        <div class="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+          <i class="fas fa-times-circle text-red-500 text-2xl mb-2"></i>
+          <p class="font-bold text-red-700">DNI no corresponde a un afiliado activo de IAPOS.</p>
+        </div>`;
+      return;
+    }
+
+    contenedor.innerHTML = `
+      <div class="bg-purple-50 border border-purple-200 rounded-xl p-4 mb-4">
+        <p class="font-bold text-purple-900">👤 ${iaposData.nombre || "DNI: " + dni}</p>
+      </div>
+      <div id="seccion-extraccion-bio" class="bg-white rounded-xl shadow p-4 mb-4 border-2 border-purple-300"></div>
+      <button id="btn-abrir-seguimiento-bio"
+        class="w-full bg-indigo-600 text-white py-3 rounded-lg text-sm font-bold hover:bg-indigo-700">
+        <i class="fas fa-list-check mr-2"></i>Seguimiento (otras prácticas de laboratorio)
+      </button>
+      <div id="seccion-seguimiento-bio" class="hidden bg-white rounded-xl shadow p-4 mt-4 border-2 border-indigo-300"></div>
+    `;
+
+    renderExtraccionBio(dni);
+
+    document
+      .getElementById("btn-abrir-seguimiento-bio")
+      .addEventListener("click", async () => {
+        const seccion = document.getElementById("seccion-seguimiento-bio");
+        seccion.classList.remove("hidden");
+        await cargarSeguimientoBioInline(dni);
+        seccion.scrollIntoView({ behavior: "smooth" });
+      });
+  } catch (e) {
+    contenedor.innerHTML =
+      '<p class="text-center text-red-500 py-6">Error al buscar el afiliado.</p>';
+  }
+}
+
+function renderExtraccionBio(dni) {
+  const seccion = document.getElementById("seccion-extraccion-bio");
+  seccion.innerHTML = `
+    <h3 class="font-bold text-purple-800 mb-3 text-sm">
+      <i class="fas fa-syringe mr-2"></i>Extracción / Datos del Día Preventivo
+    </h3>
+    <div id="alerta-extraccion-previa"></div>
+    <div class="space-y-3">
+      <div>
+        <label class="text-xs font-bold text-gray-600 block mb-1">Módulo</label>
+        <select id="bio_modulo_input" class="w-full border border-gray-300 rounded-lg p-2 text-sm">
+          <option value="">Seleccionar...</option>
+          <option value="adulto">Adulto</option>
+          <option value="niño">Niño</option>
+        </select>
+      </div>
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" id="bio_psa_input" class="w-4 h-4"> PSA
+      </label>
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" id="bio_hpv_input" class="w-4 h-4"> <span id="label-hpv-input">HPV</span>
+      </label>
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" id="bio_somf_input" class="w-4 h-4"> <span id="label-somf-input">SOMF</span>
+      </label>
+      <div style="border-top:1px solid #e5e7eb; padding-top:10px; margin-top:6px;">
+        <p class="text-xs font-bold text-gray-600 mb-2">Recepción de kits de muestra</p>
+        <label class="flex items-center gap-2 text-sm mb-1">
+          <input type="checkbox" id="chk-recibi-hpv" class="w-4 h-4"> Recibí kit HPV
+        </label>
+        <label class="flex items-center gap-2 text-sm">
+          <input type="checkbox" id="chk-recibi-somf" class="w-4 h-4"> Recibí kit SOMF
+        </label>
+        <p id="estado-kits-info" class="text-xs text-gray-400 mt-1"></p>
+      </div>
+      <button id="btn-guardar-extraccion-bio"
+        class="w-full bg-purple-600 text-white py-2 rounded-lg text-sm font-bold hover:bg-purple-700 mt-2">
+        <i class="fas fa-save mr-2"></i>Guardar
+      </button>
+      <p id="msg-extraccion-bio" class="text-xs mt-2"></p>
+    </div>`;
+
+  document
+    .getElementById("btn-guardar-extraccion-bio")
+    .addEventListener("click", () => guardarExtraccionBio(dni));
+
+  document
+    .getElementById("chk-recibi-hpv")
+    .addEventListener("change", (e) => {
+      if (e.target.checked) recibirKit(dni, "HPV", e.target);
+    });
+  document
+    .getElementById("chk-recibi-somf")
+    .addEventListener("change", (e) => {
+      if (e.target.checked) recibirKit(dni, "SOMF", e.target);
+    });
+
+  // Si nadie entregó el kit todavía, marcar HPV/SOMF arriba también lo entrega
+  document
+    .getElementById("bio_hpv_input")
+    .addEventListener("change", (e) => {
+      if (e.target.checked && e.target.dataset.pendienteEntrega === "true") {
+        entregarKitDesdeBioquimico(dni, "HPV", e.target);
+      }
+    });
+  document
+    .getElementById("bio_somf_input")
+    .addEventListener("change", (e) => {
+      if (e.target.checked && e.target.dataset.pendienteEntrega === "true") {
+        entregarKitDesdeBioquimico(dni, "SOMF", e.target);
+      }
+    });
+
+  cargarEstadoKitsBio(dni);
+
+  // Chequear si ya hubo una extracción reciente
+  fetch(`/api/bioquimico/ultima-extraccion/${dni}`)
+    .then((r) => r.json())
+    .then((data) => {
+      const alerta = document.getElementById("alerta-extraccion-previa");
+      if (data.ultima) {
+        const fecha = new Date(data.ultima.fecha_carga).toLocaleString(
+          "es-AR",
+          {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          },
+        );
+        alerta.innerHTML = `
+          <div class="bg-yellow-50 border border-yellow-300 rounded-lg p-3 mb-3 text-xs text-yellow-800">
+            <i class="fas fa-triangle-exclamation mr-1"></i>
+            Ya se registró una extracción para este paciente el <strong>${fecha}</strong>
+            (${data.ultima.nombre_prestador || "prestador no especificado"}).
+          </div>`;
+      }
+    })
+    .catch(() => {});
+}
+
+async function cargarEstadoKitsBio(dni) {
+  try {
+    const res = await fetch(`/api/kits-estado/${dni}`);
+    const data = await res.json();
+    const kits = data.kits || [];
+    const infoLinea = [];
+    const tiposConDato = new Set(kits.map((k) => k.tipo_kit));
+
+    kits.forEach((k) => {
+      // Bloque de "Recibí kit" (abajo)
+      const chkRecibi = document.getElementById(
+        `chk-recibi-${k.tipo_kit.toLowerCase()}`,
+      );
+      if (chkRecibi) {
+        if (k.recibido) {
+          chkRecibi.checked = true;
+          chkRecibi.disabled = true;
+          infoLinea.push(`${k.tipo_kit}: ya recibido`);
+        } else if (k.entregado) {
+          infoLinea.push(
+            `${k.tipo_kit}: kit entregado (${k.rol_entrego === "enfermeria" ? "por enfermería" : "por bioquímica/o"}), pendiente de recepción`,
+          );
+        }
+      }
+
+      // Bloque de arriba (HPV/SOMF): si ya fue entregado por alguien, queda como indicador simple
+      const inputArriba = document.getElementById(`bio_${k.tipo_kit.toLowerCase()}_input`);
+      const labelArriba = document.getElementById(`label-${k.tipo_kit.toLowerCase()}-input`);
+      if (inputArriba && k.entregado) {
+        inputArriba.dataset.pendienteEntrega = "false";
+        if (labelArriba) labelArriba.textContent = k.tipo_kit;
+      }
+    });
+
+    // Para los tipos que todavía no tienen ningún registro, el checkbox de arriba
+    // funciona como "entregar kit por primera vez"
+    ["HPV", "SOMF"].forEach((tipo) => {
+      if (!tiposConDato.has(tipo)) {
+        const inputArriba = document.getElementById(`bio_${tipo.toLowerCase()}_input`);
+        const labelArriba = document.getElementById(`label-${tipo.toLowerCase()}-input`);
+        if (inputArriba) inputArriba.dataset.pendienteEntrega = "true";
+        if (labelArriba) labelArriba.textContent = `Entregué kit ${tipo}`;
+      }
+    });
+
+    const infoEl = document.getElementById("estado-kits-info");
+    if (infoEl) infoEl.textContent = infoLinea.join(" · ");
+  } catch (e) {}
+}
+
+async function entregarKitDesdeBioquimico(dni, tipoKit, checkboxEl) {
+  checkboxEl.dataset.pendienteEntrega = "false";
+  try {
+    await fetch("/api/kits/entregar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dni,
+        tipo_kit: tipoKit,
+        entregado_por: prestadorActual?.nombre || "Desconocido",
+        rol_entrego: "bioquimico",
+      }),
+    });
+    const label = document.getElementById(`label-${tipoKit.toLowerCase()}-input`);
+    if (label) label.textContent = tipoKit;
+  } catch (e) {
+    console.warn("No se pudo registrar la entrega del kit:", e.message);
+  }
+}
+async function recibirKit(dni, tipoKit, checkboxEl) {
+  checkboxEl.disabled = true;
+  try {
+    await fetch("/api/kits/recibir", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dni,
+        tipo_kit: tipoKit,
+        recibido_por: prestadorActual?.nombre || "Desconocido",
+      }),
+    });
+  } catch (e) {
+    checkboxEl.disabled = false;
+    alert("Error al registrar la recepción del kit. Intentá de nuevo.");
+  }
+}
+
+async function guardarExtraccionBio(dni) {
+  const btn = document.getElementById("btn-guardar-extraccion-bio");
+  const msg = document.getElementById("msg-extraccion-bio");
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Guardando...';
+
+  const payload = {
+    dni,
+    modulo: document.getElementById("bio_modulo_input").value,
+    psa: document.getElementById("bio_psa_input").checked,
+    hpv: document.getElementById("bio_hpv_input").checked,
+    somf: document.getElementById("bio_somf_input").checked,
+    idPrestador: prestadorActual.id,
+    nombrePrestador: prestadorActual.nombre,
+  };
+
+  try {
+    const res = await fetch("/api/bioquimico/registrar-extraccion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.success) {
+      msg.className = "text-xs mt-2 text-green-600 font-bold";
+      msg.textContent = "✅ Guardado correctamente.";
+      btn.innerHTML = '<i class="fas fa-check mr-2"></i>Guardado';
+    } else {
+      throw new Error(data.message || "Error al guardar");
+    }
+  } catch (e) {
+    msg.className = "text-xs mt-2 text-red-600 font-bold";
+    msg.textContent = "Error: " + e.message;
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-save mr-2"></i>Guardar';
+  }
+}
+
+async function cargarSeguimientoBioInline(dni) {
+  const seccion = document.getElementById("seccion-seguimiento-bio");
+  seccion.innerHTML =
+    '<p class="text-center text-gray-400 py-4">Cargando seguimiento...</p>';
+  try {
+    const res = await fetch(`/api/bioquimico/seguimiento/${dni}`);
+    const data = await res.json();
+    const catalogo = data.catalogo || [];
+
+    seccion.innerHTML = `
+      <h3 class="font-bold text-indigo-800 mb-3 text-sm">
+        <i class="fas fa-list-check mr-2"></i>Seguimiento — Prácticas de laboratorio
+      </h3>
+      <div id="lista-seguimiento-bio-inline"></div>
+      <button id="btn-cerrar-seguimiento-bio"
+        class="w-full bg-gray-500 text-white py-2 rounded-lg text-sm font-bold hover:bg-gray-600 mt-3">
+        <i class="fas fa-check mr-2"></i>Cerrar / Guardar
+      </button>
+      <p id="msg-finalizar-seguimiento" class="text-xs mt-2 text-center"></p>`;
+
+    const lista = document.getElementById("lista-seguimiento-bio-inline");
+    lista.innerHTML = catalogo
+      .map(
+        (p) => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px solid ${p.marcada ? "#a5b4fc" : "#e5e7eb"}; border-radius:8px; margin-bottom:8px; background:${p.marcada ? "#eef2ff" : "#f9fafb"};">
+          <div>
+            <span style="font-size:13px; color:${p.marcada ? "#4338ca" : "#374151"}; font-weight:${p.marcada ? "700" : "400"};">
+              ${p.descripcion}
+            </span>
+            ${p.marcada ? `<div style="font-size:11px; color:#6366f1; margin-top:2px;"><i class="fas fa-clock"></i> Cargada el ${new Date(p.fecha).toLocaleDateString("es-AR")}</div>` : ""}
+          </div>
+          <button class="btn-marcar-seguimiento-inline" data-descripcion="${p.descripcion}" ${p.marcada ? "disabled" : ""}
+            style="font-size:12px; padding:5px 12px; border-radius:20px; font-weight:700; border:none; cursor:${p.marcada ? "default" : "pointer"}; background:${p.marcada ? "#c7d2fe" : "#e5e7eb"}; color:${p.marcada ? "#4338ca" : "#6b7280"};">
+            ${p.marcada ? "✓ Marcada" : "Marcar"}
+          </button>
+        </div>`,
+      )
+      .join("");
+
+    lista.querySelectorAll(".btn-marcar-seguimiento-inline").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        btn.textContent = "...";
+        try {
+          const r = await fetch("/api/bioquimico/seguimiento/marcar", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dni, descripcion: btn.dataset.descripcion }),
+          });
+          const d = await r.json();
+          if (d.success) {
+            btn.style.background = "#c7d2fe";
+            btn.style.color = "#4338ca";
+            btn.textContent = "✓ Marcada";
+          } else {
+            throw new Error(d.message);
+          }
+        } catch (e) {
+          btn.disabled = false;
+          btn.textContent = "Marcar";
+          alert("Error al marcar: " + e.message);
+        }
+      });
+    });
+    document
+      .getElementById("btn-cerrar-seguimiento-bio")
+      .addEventListener("click", () => {
+        const msg = document.getElementById("msg-finalizar-seguimiento");
+        msg.className = "text-xs mt-2 text-center text-green-600 font-bold";
+        msg.textContent = "✅ Guardado correctamente.";
+        setTimeout(() => {
+          document
+            .getElementById("seccion-seguimiento-bio")
+            .classList.add("hidden");
+        }, 900);
+      });
+  } catch (e) {
+    seccion.innerHTML =
+      '<p class="text-red-500 text-center py-4">Error al cargar seguimiento.</p>';
+  }
+}
