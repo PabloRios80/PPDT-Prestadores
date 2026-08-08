@@ -594,6 +594,19 @@ app.post("/savePracticeResult", async (req, res) => {
     clearence: "clearence_creatinina",
   };
 
+  const descLowerValidacion = (descripcion || "").toLowerCase();
+  const esSomfValidacion =
+    descLowerValidacion.includes("somf") ||
+    descLowerValidacion.includes("sangre oculta");
+
+  if (!esSomfValidacion && !archivoBase64) {
+    return res.status(400).json({
+      success: false,
+      message:
+        "Esta práctica requiere adjuntar un PDF o link con el resultado. Solo SOMF admite carga únicamente con texto.",
+    });
+  }
+
   try {
     let enlacePdf = null;
     if (archivoBase64) {

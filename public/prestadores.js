@@ -463,9 +463,18 @@ async function guardarPractica() {
   const dni = document.getElementById("dniSearch").value.trim();
 
   const hayArchivo = inputArchivo.files && inputArchivo.files.length > 0;
+  const esSomf = (practicaActual.descripcion || "")
+    .toLowerCase()
+    .match(/somf|sangre oculta/);
 
   if (!valor && !hayArchivo && !linkDrive)
     return alert("Ingrese un resultado o adjunte un PDF.");
+
+  if (!esSomf && !hayArchivo && !linkDrive) {
+    return alert(
+      "Para esta práctica es obligatorio adjuntar un PDF o un link con el resultado. Solo SOMF admite carga únicamente con resultado en texto.",
+    );
+  }
 
   // Verificar si ya fue cargada
   try {
