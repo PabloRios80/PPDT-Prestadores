@@ -727,6 +727,12 @@ app.post("/savePracticeResult", async (req, res) => {
 
     if (columnaHistorica) {
       const hoy = new Date().toISOString().split("T")[0];
+      // El PDF de SOMF queda exclusivamente en practicas_autorizadas.enlace_pdf.
+      // No se comparte en el link_pdf de practicas_historicas, ya que ese campo
+      // es común a TODA la fila del día (glucemia, colesterol, etc.) y mostraría
+      // el PDF de SOMF en campos que no le corresponden.
+      const enlacePdfParaHistorica = esSomf ? null : enlacePdf;
+
       const { data: historico } = await supabase
         .from("practicas_historicas")
         .select("id")
@@ -741,7 +747,9 @@ app.post("/savePracticeResult", async (req, res) => {
           .update({
             [columnaHistorica]: resultadoValor,
             es_individual: true,
-            ...(enlacePdf ? { link_pdf: JSON.stringify([enlacePdf]) } : {}),
+            ...(enlacePdfParaHistorica
+              ? { link_pdf: JSON.stringify([enlacePdfParaHistorica]) }
+              : {}),
           })
           .eq("id", historico.id);
       } else {
@@ -759,7 +767,9 @@ app.post("/savePracticeResult", async (req, res) => {
           prestador: nombrePrestador,
           es_individual: true,
           [columnaHistorica]: resultadoValor,
-          link_pdf: JSON.stringify(enlacePdf ? [enlacePdf] : []),
+          link_pdf: JSON.stringify(
+            enlacePdfParaHistorica ? [enlacePdfParaHistorica] : [],
+          ),
         });
       }
     }
