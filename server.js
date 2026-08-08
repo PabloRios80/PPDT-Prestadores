@@ -740,29 +740,39 @@ app.post("/savePracticeResult", async (req, res) => {
 
     if (columnaHistorica) {
       const hoy = new Date().toISOString().split("T")[0];
-      // El PDF de SOMF queda exclusivamente en practicas_autorizadas.enlace_pdf.
-      // No se comparte en el link_pdf de practicas_historicas, ya que ese campo
-      // es común a TODA la fila del día (glucemia, colesterol, etc.) y mostraría
-      // el PDF de SOMF en campos que no le corresponden.
-      const enlacePdfParaHistorica = esSomf ? null : enlacePdf;
 
       const { data: historico } = await supabase
         .from("practicas_historicas")
-        .select("id")
+        .select("id, link_pdf_por_practica")
         .eq("dni", dni)
         .eq("tipo_practica", "laboratorio")
         .eq("fecha", hoy)
         .single();
 
+      // El PDF de una práctica cargada individualmente NUNCA pisa el link_pdf
+      // general (el de la carga masiva por IA, que cubre la mayoría de las
+      // prácticas del día). Se guarda aparte, por práctica, en
+      // link_pdf_por_practica — así conviven ambos sin conflicto.
+      // El PDF de una práctica cargada individualmente NUNCA pisa el link_pdf
+      // general (el de la carga masiva por IA, que cubre la mayoría de las
+      // prácticas del día). Se guarda aparte, por práctica, en
+      // link_pdf_por_practica — así conviven ambos sin conflicto.
+      // SOMF queda afuera de este mapa: tiene su propio flujo exclusivo
+      // (practicas_autorizadas.enlace_pdf + /obtener-estudio-somf).
+      const enlacePdfParaMapa = esSomf ? null : enlacePdf;
+
       if (historico) {
+        const mapaExistente = historico.link_pdf_por_practica || {};
+        const mapaActualizado = enlacePdfParaMapa
+          ? { ...mapaExistente, [columnaHistorica]: enlacePdfParaMapa }
+          : mapaExistente;
+
         await supabase
           .from("practicas_historicas")
           .update({
             [columnaHistorica]: resultadoValor,
             es_individual: true,
-            ...(enlacePdfParaHistorica
-              ? { link_pdf: JSON.stringify([enlacePdfParaHistorica]) }
-              : {}),
+            link_pdf_por_practica: mapaActualizado,
           })
           .eq("id", historico.id);
       } else {
@@ -780,9 +790,9 @@ app.post("/savePracticeResult", async (req, res) => {
           prestador: nombrePrestador,
           es_individual: true,
           [columnaHistorica]: resultadoValor,
-          link_pdf: JSON.stringify(
-            enlacePdfParaHistorica ? [enlacePdfParaHistorica] : [],
-          ),
+          link_pdf_por_practica: enlacePdfParaMapa
+            ? { [columnaHistorica]: enlacePdfParaMapa }
+            : {},
         });
       }
     }
