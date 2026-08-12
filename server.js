@@ -2,6 +2,8 @@ require("dotenv").config();
 const { createClient } = require("@supabase/supabase-js");
 const express = require("express");
 const axios = require("axios");
+const https = require("https");
+const agenteIapos = new https.Agent({ rejectUnauthorized: false });
 const path = require("path");
 const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 const {
@@ -65,6 +67,7 @@ app.get("/verificar-afiliado/:dni", async (req, res) => {
           SOAPAction: "IAPOS_WSaction/ABEWSVALIDAAFI.Execute",
         },
         timeout: 10000,
+        httpsAgent: agenteIapos,
       },
     );
     const xml = response.data;
