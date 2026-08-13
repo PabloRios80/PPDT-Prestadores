@@ -140,7 +140,7 @@ async function buscarPracticas() {
 
   try {
     const response = await fetch(
-      `/getPracticasPrestador/${dni}/${encodeURIComponent(prestadorActual.especialidad)}`,
+      `/getPracticasPrestador/${dni}/${encodeURIComponent(prestadorActual.especialidad)}?id_prestador=${prestadorActual.id || ""}`,
     );
     const data = await response.json();
     loading.classList.add("hidden");
@@ -303,7 +303,7 @@ async function buscarPracticas() {
       try {
         await fetch(`/getPreventivePlan/${dni}`);
         const response2 = await fetch(
-          `/getPracticasPrestador/${dni}/${encodeURIComponent(prestadorActual.especialidad)}`,
+          `/getPracticasPrestador/${dni}/${encodeURIComponent(prestadorActual.especialidad)}?id_prestador=${prestadorActual.id || ""}`,
         );
         const data2 = await response2.json();
         loading.classList.add("hidden");
