@@ -126,58 +126,68 @@ app.post("/loginPrestador", async (req, res) => {
 // ── OBTENER PRÁCTICAS POR ESPECIALIDAD ──
 app.get("/getPracticasPrestador/:dni/:especialidad", async (req, res) => {
   const { dni, especialidad } = req.params;
-  const PRACTICAS_POR_ESPECIALIDAD = {
-    "Laboratorio Bioquimico": [
-      "glucemia",
-      "colesterol",
-      "creatinina",
-      "filtrado",
-      "trigliceridos",
-      "anti_VIH",
-      "hepatitis",
-      "chagas",
-      "VDRL",
-      "PSA",
-      "HPV",
-      "hemoglobina",
-      "microalbuminuria",
-      "proteinuria",
-      "clearence",
-      "SOMF",
+  const { id_prestador } = req.query;
+
+  const KEYWORDS_POR_CATEGORIA = {
+    laboratorio: [
+      "glucemia", "colesterol", "creatinina", "filtrado", "trigliceridos",
+      "anti_VIH", "hepatitis", "chagas", "VDRL", "PSA", "HPV",
+      "hemoglobina", "microalbuminuria", "proteinuria", "clearence", "SOMF",
     ],
-    "Diagnostico por Imagenes": ["mamografia", "ecografia", "abdominal"],
-    Densitometria: ["densitometria", "osea"],
-    Gastroenterologia: ["colonoscopia", "VCC"],
-    Biopsias: ["biopsia"],
-    Papanicolau: ["papanicolau", "pap"],
-    Oftalmologia: ["vision", "visual", "oftalm"],
-    Odontologia: ["odontologico", "dental"],
-    Espirometria: ["espirometria"],
-    "Prestador PPDT": ["vacunas"],
+    imagenes: ["mamografia", "ecografia", "abdominal"],
+    mamografia: ["mamografia"],
+    ecografia_abdominal: ["ecografia", "abdominal"],
+    ecografia_mamaria: ["ecografia", "mamaria"],
+    densitometria: ["densitometria", "osea"],
+    gastro: ["colonoscopia", "VCC"],
+    vcc: ["colonoscopia", "VCC"],
+    biopsias: ["biopsia"],
+    papanicolau: ["papanicolau", "pap"],
+    oftalmologia: ["vision", "visual", "oftalm"],
+    espirometria: ["espirometria"],
     coordinacion_dp: [
-      "Topicación con flúor",
-      "Enseñanza técnica H.O.",
-      "Práctica bioquímica",
-      "SOMF",
-      "papanicolau",
-      "Módulo Día Preventivo",
-      "Módulo Seguimiento",
-      "Telereceta",
-    ],
-    "Coordinacion DP": [
-      "Topicación con flúor",
-      "Enseñanza técnica H.O.",
-      "Práctica bioquímica",
-      "SOMF",
-      "papanicolau",
-      "Módulo Día Preventivo",
-      "Módulo Seguimiento",
+      "Topicación con flúor", "Enseñanza técnica H.O.", "Práctica bioquímica",
+      "SOMF", "papanicolau", "Módulo Día Preventivo", "Módulo Seguimiento",
       "Telereceta",
     ],
   };
 
+  // Mapeo de los nombres "bonitos" viejos (login PV, especialidad textual)
+  // a las claves reales de prestador_practicas, para no romper compatibilidad.
+  const ALIAS_ESPECIALIDAD = {
+    "Laboratorio Bioquimico": "laboratorio",
+    "Diagnostico por Imagenes": "imagenes",
+    Densitometria: "densitometria",
+    Gastroenterologia: "gastro",
+    Biopsias: "biopsias",
+    Papanicolau: "papanicolau",
+    Oftalmologia: "oftalmologia",
+    Espirometria: "espirometria",
+    "Coordinacion DP": "coordinacion_dp",
+  };
+
   try {
-    const keywords = PRACTICAS_POR_ESPECIALIDAD[especialidad] || [];
+    let keywords = [];
+
+    if (id_prestador) {
+      // Prestador real: combinar TODAS sus categorías asignadas
+      const { data: asignadas } = await supabase
+        .from("prestador_practicas")
+        .select("practica")
+        .eq("id_prestador", id_prestador);
+
+      (asignadas || []).forEach((a) => {
+        keywords = keywords.concat(KEYWORDS_POR_CATEGORIA[a.practica] || []);
+      });
+    }
+
+    // Respaldo: si no vino id_prestador o no tiene nada asignado, usar el
+    // comportamiento anterior por especialidad (compatibilidad).
+    if (keywords.length === 0) {
+      const claveNormalizada =
+        ALIAS_ESPECIALIDAD[especialidad] || especialidad;
+      keywords = KEYWORDS_POR_CATEGORIA[claveNormalizada] || [];
+    }
 
     // Si no hay prácticas autorizadas, generarlas automáticamente
     const { data: existing } = await supabase
