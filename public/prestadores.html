@@ -525,7 +525,7 @@
                 BUSCAR
               </button>
               <button
-                onclick="cargarKitsPendientesAlarma()"
+                onclick="toggleKitsPendientesAlarma()"
                 class="bg-orange-100 text-orange-700 border border-orange-300 px-4 py-2 rounded-lg text-xs font-bold hover:bg-orange-200 transition ml-2"
               >
                 <i class="fas fa-bell mr-1"></i> Kits pendientes (+7 días)
@@ -533,7 +533,10 @@
             </div>
           </div>
           <div id="contenedorIndicacionesBio"></div>
-          <div id="panelKitsPendientes" class="hidden bg-white rounded-xl shadow p-4 mt-4 border-2 border-orange-300"></div>
+          <div
+            id="panelKitsPendientes"
+            class="hidden bg-white rounded-xl shadow p-4 mt-4 border-2 border-orange-300"
+          ></div>
         </div>
       </main>
     </div>

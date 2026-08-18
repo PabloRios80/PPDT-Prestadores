@@ -1186,17 +1186,21 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
       .maybeSingle();
 
     if (registro) {
+      const updatePayload = {
+        bio_paso: seMarcoModulo,
+        bio_modulo: modulo || null,
+        bio_cargado_analisis: true,
+      };
+      // Solo escribimos estos campos si vienen en TRUE — nunca los pisamos a false
+      // desde acá, porque también los puede haber puesto en true la entrega/recepción
+      // de kit (marcarKitEnTableroDia). Para apagarlos se usa el botón de borrar.
+      if (psa) updatePayload.bio_psa = true;
+      if (hpv) updatePayload.bio_hpv = true;
+      if (somf) updatePayload.bio_somf = true;
+
       await supabase
         .from("tablero_dia")
-        .update({
-          // El círculo "LAB" del tablero solo debe quedar verde si se marcó Módulo
-          bio_paso: seMarcoModulo,
-          bio_modulo: modulo || null,
-          bio_psa: !!psa,
-          bio_hpv: !!hpv,
-          bio_somf: !!somf,
-          bio_cargado_analisis: true,
-        })
+        .update(updatePayload)
         .eq("id", registro.id);
     }
 

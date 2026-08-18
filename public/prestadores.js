@@ -1941,26 +1941,52 @@ async function cargarKitsPendientesAlarma() {
         '<p class="text-center text-green-600 py-4 text-sm">✓ No hay kits pendientes de reclamo.</p>';
       return;
     }
+
+    if (!pendientes.length) {
+      panel.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <p class="text-green-600 py-2 text-sm">✓ No hay kits pendientes de reclamo.</p>
+      <button onclick="document.getElementById('panelKitsPendientes').classList.add('hidden')"
+        style="color:#6b7280; background:none; border:none; cursor:pointer; font-size:16px;">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>`;
+      return;
+    }
     panel.innerHTML = `
-      <h3 class="font-bold text-orange-800 mb-3 text-sm"><i class="fas fa-bell mr-2"></i>Kits sin recepción hace más de 7 días</h3>
-      ${pendientes
-        .map(
-          (p) => `
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px; border-bottom:1px solid #fed7aa; font-size:12px;">
-          <div>
-            <strong>${p.nombre_completo || p.dni}</strong> — DNI ${p.dni} — Kit ${p.tipo_kit}
-            <div style="color:#9a3412;">Entregado hace ${p.dias_pendiente} días (${p.rol_entrego === "enfermeria" ? "por enfermería" : "por bioquímica/o"})</div>
-          </div>
-          <button onclick="document.getElementById('dniIndicacionesBio').value='${p.dni}'; buscarIndicacionesBio();"
-            class="bg-orange-600 text-white text-xs px-3 py-1 rounded-lg font-bold hover:bg-orange-700">
-            Ver
-          </button>
-        </div>`,
-        )
-        .join("")}
-    `;
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+    <h3 class="font-bold text-orange-800 text-sm"><i class="fas fa-bell mr-2"></i>Kits sin recepción hace más de 7 días</h3>
+    <button onclick="document.getElementById('panelKitsPendientes').classList.add('hidden')"
+      style="color:#9a3412; background:none; border:none; cursor:pointer; font-size:16px;">
+      <i class="fas fa-times"></i>
+    </button>
+  </div>
+  ${pendientes
+    .map(
+      (p) => `
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px; border-bottom:1px solid #fed7aa; font-size:12px;">
+      <div>
+        <strong>${p.nombre_completo || p.dni}</strong> — DNI ${p.dni} — Kit ${p.tipo_kit}
+        <div style="color:#9a3412;">Entregado hace ${p.dias_pendiente} días (${p.rol_entrego === "enfermeria" ? "por enfermería" : "por bioquímica/o"})</div>
+      </div>
+      <button onclick="document.getElementById('dniIndicacionesBio').value='${p.dni}'; buscarIndicacionesBio();"
+        class="bg-orange-600 text-white text-xs px-3 py-1 rounded-lg font-bold hover:bg-orange-700">
+        Ver
+      </button>
+    </div>`,
+    )
+    .join("")}
+`;
   } catch (e) {
     panel.innerHTML =
       '<p class="text-red-500 text-center py-4">Error al cargar pendientes.</p>';
+  }
+}
+function toggleKitsPendientesAlarma() {
+  const panel = document.getElementById("panelKitsPendientes");
+  if (!panel.classList.contains("hidden")) {
+    panel.classList.add("hidden");
+  } else {
+    cargarKitsPendientesAlarma();
   }
 }
