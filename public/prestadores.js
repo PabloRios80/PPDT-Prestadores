@@ -1626,36 +1626,27 @@ function renderExtraccionBio(dni) {
     .getElementById("btn-guardar-extraccion-bio")
     .addEventListener("click", () => guardarExtraccionBio(dni));
 
-  document
-    .getElementById("chk-recibi-hpv")
-    .addEventListener("change", (e) => {
-      if (e.target.checked) recibirKit(dni, "HPV", e.target);
-    });
-  document
-    .getElementById("chk-recibi-somf")
-    .addEventListener("change", (e) => {
-      if (e.target.checked) recibirKit(dni, "SOMF", e.target);
-    });
+  document.getElementById("chk-recibi-hpv").addEventListener("change", (e) => {
+    if (e.target.checked) recibirKit(dni, "HPV", e.target);
+  });
+  document.getElementById("chk-recibi-somf").addEventListener("change", (e) => {
+    if (e.target.checked) recibirKit(dni, "SOMF", e.target);
+  });
 
   // Si nadie entregó el kit todavía, marcar HPV/SOMF arriba también lo entrega
-  document
-    .getElementById("bio_hpv_input")
-    .addEventListener("change", (e) => {
-      if (e.target.checked && e.target.dataset.pendienteEntrega === "true") {
-        entregarKitDesdeBioquimico(dni, "HPV", e.target);
-      }
-    });
-  document
-    .getElementById("bio_somf_input")
-    .addEventListener("change", (e) => {
-      if (e.target.checked && e.target.dataset.pendienteEntrega === "true") {
-        entregarKitDesdeBioquimico(dni, "SOMF", e.target);
-      }
-    });
+  document.getElementById("bio_hpv_input").addEventListener("change", (e) => {
+    if (e.target.checked && e.target.dataset.pendienteEntrega === "true") {
+      entregarKitDesdeBioquimico(dni, "HPV", e.target);
+    }
+  });
+  document.getElementById("bio_somf_input").addEventListener("change", (e) => {
+    if (e.target.checked && e.target.dataset.pendienteEntrega === "true") {
+      entregarKitDesdeBioquimico(dni, "SOMF", e.target);
+    }
+  });
 
   cargarEstadoKitsBio(dni);
 
-  // Chequear si ya hubo una extracción reciente
   fetch(`/api/bioquimico/ultima-extraccion/${dni}`)
     .then((r) => r.json())
     .then((data) => {
@@ -1672,11 +1663,27 @@ function renderExtraccionBio(dni) {
           },
         );
         alerta.innerHTML = `
-          <div class="bg-yellow-50 border border-yellow-300 rounded-lg p-3 mb-3 text-xs text-yellow-800">
-            <i class="fas fa-triangle-exclamation mr-1"></i>
-            Ya se registró una extracción para este paciente el <strong>${fecha}</strong>
-            (${data.ultima.nombre_prestador || "prestador no especificado"}).
-          </div>`;
+        <div class="bg-yellow-50 border border-yellow-300 rounded-lg p-3 mb-3 text-xs text-yellow-800 flex justify-between items-center gap-2">
+          <span><i class="fas fa-triangle-exclamation mr-1"></i>Ya se registró una extracción para este paciente el <strong>${fecha}</strong> (${data.ultima.nombre_prestador || "prestador no especificado"}).</span>
+          <button id="btn-deshacer-extraccion" style="color:#b91c1c; background:none; border:none; cursor:pointer;"><i class="fas fa-trash"></i></button>
+        </div>`;
+        document
+          .getElementById("btn-deshacer-extraccion")
+          .addEventListener("click", async () => {
+            if (!confirm("¿Seguro que querés borrar esta extracción?")) return;
+            try {
+              const r = await fetch("/api/bioquimico/deshacer-extraccion", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: data.ultima.id, dni }),
+              });
+              const d = await r.json();
+              if (!d.success) throw new Error(d.message || "Error al borrar");
+              renderExtraccionBio(dni);
+            } catch (e) {
+              alert("Error: " + e.message);
+            }
+          });
       }
     })
     .catch(() => {});
@@ -1687,48 +1694,86 @@ async function cargarEstadoKitsBio(dni) {
     const res = await fetch(`/api/kits-estado/${dni}`);
     const data = await res.json();
     const kits = data.kits || [];
-    const infoLinea = [];
     const tiposConDato = new Set(kits.map((k) => k.tipo_kit));
 
+    const infoEl = document.getElementById("estado-kits-info");
+    if (infoEl) {
+      infoEl.innerHTML = kits
+        .map((k) => {
+          const partes = [];
+          if (k.entregado) {
+            partes.push(`
+              <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#374151; margin-bottom:2px;">
+                <span>${k.tipo_kit}: entregado ${k.fecha_entrega ? "el " + new Date(k.fecha_entrega).toLocaleDateString("es-AR") : ""} (${k.rol_entrego === "enfermeria" ? "por enfermería" : "por bioquímica/o"})</span>
+                <button class="btn-deshacer-kit" data-dni="${dni}" data-tipo="${k.tipo_kit}" data-accion="entrega" style="color:#dc2626; background:none; border:none; cursor:pointer; font-size:11px;"><i class="fas fa-trash"></i></button>
+              </div>`);
+          }
+          if (k.recibido) {
+            partes.push(`
+              <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#374151;">
+                <span>${k.tipo_kit}: recibido ${k.fecha_recepcion ? "el " + new Date(k.fecha_recepcion).toLocaleDateString("es-AR") : ""}</span>
+                <button class="btn-deshacer-kit" data-dni="${dni}" data-tipo="${k.tipo_kit}" data-accion="recepcion" style="color:#dc2626; background:none; border:none; cursor:pointer; font-size:11px;"><i class="fas fa-trash"></i></button>
+              </div>`);
+          }
+          return partes.join("");
+        })
+        .join("");
+
+      infoEl.querySelectorAll(".btn-deshacer-kit").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          if (!confirm("¿Seguro que querés borrar esta acción?")) return;
+          try {
+            const r = await fetch("/api/kits/deshacer", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                dni: btn.dataset.dni,
+                tipo_kit: btn.dataset.tipo,
+                accion: btn.dataset.accion,
+              }),
+            });
+            const d = await r.json();
+            if (!d.success) throw new Error(d.message || "Error al borrar");
+            renderExtraccionBio(dni);
+          } catch (e) {
+            alert("Error: " + e.message);
+          }
+        });
+      });
+    }
+
     kits.forEach((k) => {
-      // Bloque de "Recibí kit" (abajo)
       const chkRecibi = document.getElementById(
         `chk-recibi-${k.tipo_kit.toLowerCase()}`,
       );
-      if (chkRecibi) {
-        if (k.recibido) {
-          chkRecibi.checked = true;
-          chkRecibi.disabled = true;
-          infoLinea.push(`${k.tipo_kit}: ya recibido`);
-        } else if (k.entregado) {
-          infoLinea.push(
-            `${k.tipo_kit}: kit entregado (${k.rol_entrego === "enfermeria" ? "por enfermería" : "por bioquímica/o"}), pendiente de recepción`,
-          );
-        }
+      if (chkRecibi && k.recibido) {
+        chkRecibi.checked = true;
+        chkRecibi.disabled = true;
       }
-
-      // Bloque de arriba (HPV/SOMF): si ya fue entregado por alguien, queda como indicador simple
-      const inputArriba = document.getElementById(`bio_${k.tipo_kit.toLowerCase()}_input`);
-      const labelArriba = document.getElementById(`label-${k.tipo_kit.toLowerCase()}-input`);
+      const inputArriba = document.getElementById(
+        `bio_${k.tipo_kit.toLowerCase()}_input`,
+      );
+      const labelArriba = document.getElementById(
+        `label-${k.tipo_kit.toLowerCase()}-input`,
+      );
       if (inputArriba && k.entregado) {
         inputArriba.dataset.pendienteEntrega = "false";
         if (labelArriba) labelArriba.textContent = k.tipo_kit;
       }
     });
 
-    // Para los tipos que todavía no tienen ningún registro, el checkbox de arriba
-    // funciona como "entregar kit por primera vez"
     ["HPV", "SOMF"].forEach((tipo) => {
       if (!tiposConDato.has(tipo)) {
-        const inputArriba = document.getElementById(`bio_${tipo.toLowerCase()}_input`);
-        const labelArriba = document.getElementById(`label-${tipo.toLowerCase()}-input`);
+        const inputArriba = document.getElementById(
+          `bio_${tipo.toLowerCase()}_input`,
+        );
+        const labelArriba = document.getElementById(
+          `label-${tipo.toLowerCase()}-input`,
+        );
         if (inputArriba) inputArriba.dataset.pendienteEntrega = "true";
         if (labelArriba) labelArriba.textContent = `Entregué kit ${tipo}`;
       }
     });
-
-    const infoEl = document.getElementById("estado-kits-info");
-    if (infoEl) infoEl.textContent = infoLinea.join(" · ");
   } catch (e) {}
 }
 
@@ -1745,7 +1790,9 @@ async function entregarKitDesdeBioquimico(dni, tipoKit, checkboxEl) {
         rol_entrego: "bioquimico",
       }),
     });
-    const label = document.getElementById(`label-${tipoKit.toLowerCase()}-input`);
+    const label = document.getElementById(
+      `label-${tipoKit.toLowerCase()}-input`,
+    );
     if (label) label.textContent = tipoKit;
   } catch (e) {
     console.warn("No se pudo registrar la entrega del kit:", e.message);
@@ -1831,43 +1878,36 @@ async function cargarSeguimientoBioInline(dni) {
     lista.innerHTML = catalogo
       .map(
         (p) => `
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px solid ${p.marcada ? "#a5b4fc" : "#e5e7eb"}; border-radius:8px; margin-bottom:8px; background:${p.marcada ? "#eef2ff" : "#f9fafb"};">
-          <div>
-            <span style="font-size:13px; color:${p.marcada ? "#4338ca" : "#374151"}; font-weight:${p.marcada ? "700" : "400"};">
-              ${p.descripcion}
-            </span>
-            ${p.marcada ? `<div style="font-size:11px; color:#6366f1; margin-top:2px;"><i class="fas fa-clock"></i> Cargada el ${new Date(p.fecha).toLocaleDateString("es-AR")}</div>` : ""}
-          </div>
-          <button class="btn-marcar-seguimiento-inline" data-descripcion="${p.descripcion}" ${p.marcada ? "disabled" : ""}
-            style="font-size:12px; padding:5px 12px; border-radius:20px; font-weight:700; border:none; cursor:${p.marcada ? "default" : "pointer"}; background:${p.marcada ? "#c7d2fe" : "#e5e7eb"}; color:${p.marcada ? "#4338ca" : "#6b7280"};">
-            ${p.marcada ? "✓ Marcada" : "Marcar"}
-          </button>
-        </div>`,
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px solid ${p.marcada ? "#a5b4fc" : "#e5e7eb"}; border-radius:8px; margin-bottom:8px; background:${p.marcada ? "#eef2ff" : "#f9fafb"};">
+      <div>
+        <span style="font-size:13px; color:${p.marcada ? "#4338ca" : "#374151"}; font-weight:${p.marcada ? "700" : "400"};">
+          ${p.descripcion}
+        </span>
+        ${p.marcada ? `<div style="font-size:11px; color:#6366f1; margin-top:2px;"><i class="fas fa-clock"></i> Cargada el ${new Date(p.fecha).toLocaleDateString("es-AR")}</div>` : ""}
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        ${p.marcada && p.id ? `<button class="btn-borrar-seguimiento-inline" data-id="${p.id}" style="color:#dc2626; background:none; border:none; cursor:pointer;"><i class="fas fa-trash"></i></button>` : ""}
+        <button class="btn-marcar-seguimiento-inline" data-descripcion="${p.descripcion}" ${p.marcada ? "disabled" : ""}
+          style="font-size:12px; padding:5px 12px; border-radius:20px; font-weight:700; border:none; cursor:${p.marcada ? "default" : "pointer"}; background:${p.marcada ? "#c7d2fe" : "#e5e7eb"}; color:${p.marcada ? "#4338ca" : "#6b7280"};">
+          ${p.marcada ? "✓ Marcada" : "Marcar"}
+        </button>
+      </div>
+    </div>`,
       )
       .join("");
 
-    lista.querySelectorAll(".btn-marcar-seguimiento-inline").forEach((btn) => {
+    lista.querySelectorAll(".btn-borrar-seguimiento-inline").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        btn.disabled = true;
-        btn.textContent = "...";
+        if (!confirm("¿Seguro que querés borrar esta práctica?")) return;
         try {
-          const r = await fetch("/api/bioquimico/seguimiento/marcar", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ dni, descripcion: btn.dataset.descripcion }),
+          const r = await fetch(`/eliminarPractica/${btn.dataset.id}`, {
+            method: "DELETE",
           });
           const d = await r.json();
-          if (d.success) {
-            btn.style.background = "#c7d2fe";
-            btn.style.color = "#4338ca";
-            btn.textContent = "✓ Marcada";
-          } else {
-            throw new Error(d.message);
-          }
+          if (!d.success) throw new Error(d.message || "Error al borrar");
+          cargarSeguimientoBioInline(dni);
         } catch (e) {
-          btn.disabled = false;
-          btn.textContent = "Marcar";
-          alert("Error al marcar: " + e.message);
+          alert("Error: " + e.message);
         }
       });
     });
@@ -1886,5 +1926,41 @@ async function cargarSeguimientoBioInline(dni) {
   } catch (e) {
     seccion.innerHTML =
       '<p class="text-red-500 text-center py-4">Error al cargar seguimiento.</p>';
+  }
+}
+async function cargarKitsPendientesAlarma() {
+  const panel = document.getElementById("panelKitsPendientes");
+  panel.classList.remove("hidden");
+  panel.innerHTML = '<p class="text-center text-gray-400 py-4">Cargando...</p>';
+  try {
+    const res = await fetch("/api/kits/pendientes-alarma");
+    const data = await res.json();
+    const pendientes = data.pendientes || [];
+    if (!pendientes.length) {
+      panel.innerHTML =
+        '<p class="text-center text-green-600 py-4 text-sm">✓ No hay kits pendientes de reclamo.</p>';
+      return;
+    }
+    panel.innerHTML = `
+      <h3 class="font-bold text-orange-800 mb-3 text-sm"><i class="fas fa-bell mr-2"></i>Kits sin recepción hace más de 7 días</h3>
+      ${pendientes
+        .map(
+          (p) => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px; border-bottom:1px solid #fed7aa; font-size:12px;">
+          <div>
+            <strong>${p.nombre_completo || p.dni}</strong> — DNI ${p.dni} — Kit ${p.tipo_kit}
+            <div style="color:#9a3412;">Entregado hace ${p.dias_pendiente} días (${p.rol_entrego === "enfermeria" ? "por enfermería" : "por bioquímica/o"})</div>
+          </div>
+          <button onclick="document.getElementById('dniIndicacionesBio').value='${p.dni}'; buscarIndicacionesBio();"
+            class="bg-orange-600 text-white text-xs px-3 py-1 rounded-lg font-bold hover:bg-orange-700">
+            Ver
+          </button>
+        </div>`,
+        )
+        .join("")}
+    `;
+  } catch (e) {
+    panel.innerHTML =
+      '<p class="text-red-500 text-center py-4">Error al cargar pendientes.</p>';
   }
 }

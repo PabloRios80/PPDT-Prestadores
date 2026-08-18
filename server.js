@@ -130,9 +130,22 @@ app.get("/getPracticasPrestador/:dni/:especialidad", async (req, res) => {
 
   const KEYWORDS_POR_CATEGORIA = {
     laboratorio: [
-      "glucemia", "colesterol", "creatinina", "filtrado", "trigliceridos",
-      "anti_VIH", "hepatitis", "chagas", "VDRL", "PSA", "HPV",
-      "hemoglobina", "microalbuminuria", "proteinuria", "clearence", "SOMF",
+      "glucemia",
+      "colesterol",
+      "creatinina",
+      "filtrado",
+      "trigliceridos",
+      "anti_VIH",
+      "hepatitis",
+      "chagas",
+      "VDRL",
+      "PSA",
+      "HPV",
+      "hemoglobina",
+      "microalbuminuria",
+      "proteinuria",
+      "clearence",
+      "SOMF",
     ],
     imagenes: ["mamografia", "ecografia", "abdominal"],
     mamografia: ["mamografia"],
@@ -146,8 +159,13 @@ app.get("/getPracticasPrestador/:dni/:especialidad", async (req, res) => {
     oftalmologia: ["vision", "visual", "oftalm"],
     espirometria: ["espirometria"],
     coordinacion_dp: [
-      "Topicación con flúor", "Enseñanza técnica H.O.", "Práctica bioquímica",
-      "SOMF", "papanicolau", "Módulo Día Preventivo", "Módulo Seguimiento",
+      "Topicación con flúor",
+      "Enseñanza técnica H.O.",
+      "Práctica bioquímica",
+      "SOMF",
+      "papanicolau",
+      "Módulo Día Preventivo",
+      "Módulo Seguimiento",
       "Telereceta",
     ],
   };
@@ -184,8 +202,7 @@ app.get("/getPracticasPrestador/:dni/:especialidad", async (req, res) => {
     // Respaldo: si no vino id_prestador o no tiene nada asignado, usar el
     // comportamiento anterior por especialidad (compatibilidad).
     if (keywords.length === 0) {
-      const claveNormalizada =
-        ALIAS_ESPECIALIDAD[especialidad] || especialidad;
+      const claveNormalizada = ALIAS_ESPECIALIDAD[especialidad] || especialidad;
       keywords = KEYWORDS_POR_CATEGORIA[claveNormalizada] || [];
     }
 
@@ -476,13 +493,16 @@ async function generarPdfInformeSomf({
     color: rgb(0.01, 0.25, 0.54),
   });
   y -= 22;
-  page.drawText("Informe de resultado — Sangre Oculta en Materia Fecal (SOMF)", {
-    x: margenX,
-    y,
-    size: 12,
-    font: fontRegular,
-    color: rgb(0.3, 0.3, 0.3),
-  });
+  page.drawText(
+    "Informe de resultado — Sangre Oculta en Materia Fecal (SOMF)",
+    {
+      x: margenX,
+      y,
+      size: 12,
+      font: fontRegular,
+      color: rgb(0.3, 0.3, 0.3),
+    },
+  );
   y -= 40;
 
   const linea = (etiqueta, valor) => {
@@ -560,7 +580,10 @@ async function obtenerDatosBioquimicoResponsable(idPrestador) {
       };
     }
   } catch (e) {
-    console.warn("No se pudo obtener datos del bioquímico responsable:", e.message);
+    console.warn(
+      "No se pudo obtener datos del bioquímico responsable:",
+      e.message,
+    );
   }
   return { nombre: "-", matricula: "-" };
 }
@@ -680,10 +703,16 @@ app.post("/savePracticeResult", async (req, res) => {
           enlacePdf = urlPdfData.publicUrl;
           console.log("✅ PDF automático de SOMF generado para DNI:", dni);
         } else {
-          console.warn("No se pudo subir el PDF automático de SOMF:", uploadPdfError.message);
+          console.warn(
+            "No se pudo subir el PDF automático de SOMF:",
+            uploadPdfError.message,
+          );
         }
       } catch (pdfErr) {
-        console.error("Error generando PDF automático de SOMF:", pdfErr.message);
+        console.error(
+          "Error generando PDF automático de SOMF:",
+          pdfErr.message,
+        );
       }
     }
 
@@ -841,7 +870,10 @@ app.post("/savePracticeResult", async (req, res) => {
           });
         }
       } catch (kitErr) {
-        console.warn("No se pudo actualizar kits_seguimiento para SOMF:", kitErr.message);
+        console.warn(
+          "No se pudo actualizar kits_seguimiento para SOMF:",
+          kitErr.message,
+        );
       }
     }
 
@@ -1242,6 +1274,270 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
   }
 });
 
+async function marcarKitEnTableroDia(dni, tipoKit) {
+  const campo =
+    tipoKit === "HPV" ? "bio_hpv" : tipoKit === "SOMF" ? "bio_somf" : null;
+  if (!campo) return;
+  const hoy = new Date().toISOString().split("T")[0];
+  const { data: registro } = await supabase
+    .from("tablero_dia")
+    .select("id")
+    .eq("dni", dni)
+    .gte("fecha", hoy)
+    .lte("fecha", hoy)
+    .maybeSingle();
+  if (registro) {
+    await supabase
+      .from("tablero_dia")
+      .update({ [campo]: true })
+      .eq("id", registro.id);
+  }
+}
+app.post("/api/kits/entregar", async (req, res) => {
+  const { dni, tipo_kit, entregado_por, rol_entrego } = req.body;
+  if (!dni || !tipo_kit) {
+    return res.status(400).json({ success: false, message: "Faltan datos." });
+  }
+  try {
+    const { data: existente } = await supabase
+      .from("kits_seguimiento")
+      .select("id")
+      .eq("dni", dni)
+      .eq("tipo_kit", tipo_kit)
+      .maybeSingle();
+
+    const fechaEntrega = new Date().toISOString();
+
+    if (existente) {
+      await supabase
+        .from("kits_seguimiento")
+        .update({
+          entregado: true,
+          entregado_por,
+          rol_entrego,
+          fecha_entrega: fechaEntrega,
+        })
+        .eq("id", existente.id);
+    } else {
+      await supabase.from("kits_seguimiento").insert({
+        dni,
+        tipo_kit,
+        entregado: true,
+        entregado_por,
+        rol_entrego,
+        fecha_entrega: fechaEntrega,
+      });
+    }
+
+    await marcarKitEnTableroDia(dni, tipo_kit);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+app.post("/api/kits/recibir", async (req, res) => {
+  const { dni, tipo_kit, recibido_por } = req.body;
+  if (!dni || !tipo_kit) {
+    return res.status(400).json({ success: false, message: "Faltan datos." });
+  }
+  try {
+    const { data: existente } = await supabase
+      .from("kits_seguimiento")
+      .select("id")
+      .eq("dni", dni)
+      .eq("tipo_kit", tipo_kit)
+      .maybeSingle();
+
+    if (existente) {
+      await supabase
+        .from("kits_seguimiento")
+        .update({
+          recibido: true,
+          recibido_por,
+          fecha_recepcion: new Date().toISOString(),
+        })
+        .eq("id", existente.id);
+    } else {
+      await supabase.from("kits_seguimiento").insert({
+        dni,
+        tipo_kit,
+        recibido: true,
+        recibido_por,
+        fecha_recepcion: new Date().toISOString(),
+      });
+    }
+
+    await marcarKitEnTableroDia(dni, tipo_kit); // ← ÚNICA LÍNEA NUEVA
+
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+app.get("/api/kits/pendientes-alarma", async (req, res) => {
+  const limite = new Date();
+  limite.setDate(limite.getDate() - 7);
+  try {
+    const { data, error } = await supabase
+      .from("kits_seguimiento")
+      .select("dni, tipo_kit, entregado_por, rol_entrego, fecha_entrega")
+      .eq("entregado", true)
+      .eq("recibido", false)
+      .lte("fecha_entrega", limite.toISOString())
+      .order("fecha_entrega", { ascending: true });
+    if (error) throw error;
+
+    const dnis = [...new Set((data || []).map((k) => k.dni))];
+    let nombres = {};
+    if (dnis.length) {
+      const { data: afiliados } = await supabase
+        .from("afiliados")
+        .select("dni, nombre, apellido")
+        .in("dni", dnis);
+      (afiliados || []).forEach((a) => {
+        nombres[a.dni] = `${a.apellido} ${a.nombre}`;
+      });
+    }
+
+    const pendientes = (data || []).map((k) => ({
+      ...k,
+      nombre_completo: nombres[k.dni] || null,
+      dias_pendiente: Math.floor(
+        (Date.now() - new Date(k.fecha_entrega).getTime()) / 86400000,
+      ),
+    }));
+
+    res.json({ success: true, pendientes });
+  } catch (e) {
+    res.status(500).json({ success: false, pendientes: [] });
+  }
+});
+
+app.post("/api/kits/deshacer", async (req, res) => {
+  const { dni, tipo_kit, accion } = req.body; // accion: "entrega" | "recepcion"
+  if (!dni || !tipo_kit || !accion) {
+    return res.status(400).json({ success: false, message: "Faltan datos." });
+  }
+  try {
+    const { data: registro } = await supabase
+      .from("kits_seguimiento")
+      .select("*")
+      .eq("dni", dni)
+      .eq("tipo_kit", tipo_kit)
+      .maybeSingle();
+
+    if (!registro) return res.json({ success: true });
+
+    if (accion === "entrega") {
+      if (registro.recibido) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Este kit ya tiene recepción cargada. Borrá primero la recepción.",
+        });
+      }
+      await supabase
+        .from("kits_seguimiento")
+        .update({
+          entregado: false,
+          entregado_por: null,
+          rol_entrego: null,
+          fecha_entrega: null,
+        })
+        .eq("id", registro.id);
+    } else if (accion === "recepcion") {
+      await supabase
+        .from("kits_seguimiento")
+        .update({ recibido: false, recibido_por: null, fecha_recepcion: null })
+        .eq("id", registro.id);
+    }
+
+    // Releer estado actualizado para decidir si hay que apagar el box de tablero_dia
+    const { data: actualizado } = await supabase
+      .from("kits_seguimiento")
+      .select("entregado, recibido")
+      .eq("id", registro.id)
+      .single();
+
+    if (actualizado && !actualizado.entregado && !actualizado.recibido) {
+      const campo =
+        tipo_kit === "HPV"
+          ? "bio_hpv"
+          : tipo_kit === "SOMF"
+            ? "bio_somf"
+            : null;
+      if (campo) {
+        const hoy = new Date().toISOString().split("T")[0];
+        const { data: td } = await supabase
+          .from("tablero_dia")
+          .select("id")
+          .eq("dni", dni)
+          .gte("fecha", hoy)
+          .lte("fecha", hoy)
+          .maybeSingle();
+        if (td)
+          await supabase
+            .from("tablero_dia")
+            .update({ [campo]: false })
+            .eq("id", td.id);
+      }
+    }
+
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+app.post("/api/bioquimico/deshacer-extraccion", async (req, res) => {
+  const { id, dni } = req.body;
+  if (!id || !dni) {
+    return res.status(400).json({ success: false, message: "Faltan datos." });
+  }
+  try {
+    await supabase.from("practicas_autorizadas").delete().eq("id", id);
+
+    const hoy = new Date().toISOString().split("T")[0];
+    const { data: td } = await supabase
+      .from("tablero_dia")
+      .select("id")
+      .eq("dni", dni)
+      .gte("fecha", hoy)
+      .lte("fecha", hoy)
+      .maybeSingle();
+
+    if (td) {
+      const { data: kits } = await supabase
+        .from("kits_seguimiento")
+        .select("tipo_kit, entregado, recibido")
+        .eq("dni", dni)
+        .in("tipo_kit", ["HPV", "SOMF"]);
+
+      const tieneKitPropio = (tipo) =>
+        (kits || []).some(
+          (k) => k.tipo_kit === tipo && (k.entregado || k.recibido),
+        );
+
+      const update = {
+        bio_paso: false,
+        bio_modulo: null,
+        bio_psa: false,
+        bio_cargado_analisis: false,
+      };
+      if (!tieneKitPropio("HPV")) update.bio_hpv = false;
+      if (!tieneKitPropio("SOMF")) update.bio_somf = false;
+
+      await supabase.from("tablero_dia").update(update).eq("id", td.id);
+    }
+
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
 // ── KITS HPV / SOMF (recepción, compartido con enfermería) ──
 app.get("/api/kits-estado/:dni", async (req, res) => {
   try {
@@ -1319,7 +1615,7 @@ app.get("/api/bioquimico/seguimiento/:dni", async (req, res) => {
   try {
     const { data } = await supabase
       .from("practicas_autorizadas")
-      .select("descripcion_practica, fecha_autorizacion")
+      .select("id, descripcion_practica, fecha_autorizacion")
       .eq("dni", dni)
       .eq("estado", "AUTORIZADA")
       .in("descripcion_practica", CATALOGO_SEGUIMIENTO_BIO)
@@ -1329,14 +1625,18 @@ app.get("/api/bioquimico/seguimiento/:dni", async (req, res) => {
     const ultimaPorDescripcion = {};
     (data || []).forEach((d) => {
       if (!ultimaPorDescripcion[d.descripcion_practica]) {
-        ultimaPorDescripcion[d.descripcion_practica] = d.fecha_autorizacion;
+        ultimaPorDescripcion[d.descripcion_practica] = {
+          fecha: d.fecha_autorizacion,
+          id: d.id,
+        };
       }
     });
 
     const catalogo = CATALOGO_SEGUIMIENTO_BIO.map((desc) => ({
       descripcion: desc,
       marcada: !!ultimaPorDescripcion[desc],
-      fecha: ultimaPorDescripcion[desc] || null,
+      fecha: ultimaPorDescripcion[desc]?.fecha || null,
+      id: ultimaPorDescripcion[desc]?.id || null,
     }));
     res.json({ catalogo });
   } catch (e) {
@@ -1389,7 +1689,7 @@ app.get("/api/bioquimico/ultima-extraccion/:dni", async (req, res) => {
   try {
     const { data } = await supabase
       .from("practicas_autorizadas")
-      .select("fecha_carga, nombre_prestador")
+      .select("id, fecha_carga, nombre_prestador")
       .eq("dni", dni)
       .eq("descripcion_practica", "Práctica bioquímica")
       .gte("fecha_carga", hace30dias.toISOString())

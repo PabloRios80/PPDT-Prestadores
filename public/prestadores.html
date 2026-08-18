@@ -166,7 +166,8 @@
 
       (function () {
         const SEDES_CON_TABLERO = [1, 4, 6];
-        const btnIndicacionesBio = document.getElementById("btnIndicacionesBio");
+        const btnIndicacionesBio =
+          document.getElementById("btnIndicacionesBio");
         if (btnIndicacionesBio) {
           btnIndicacionesBio.addEventListener("click", () => {
             const btnTablero = document.getElementById("btnVerTableroBio");
@@ -254,7 +255,9 @@
 
       // ── Diferenciación visual: tinte violeta cuando está activo "Indicaciones Bioquímicas" ──
       document.addEventListener("DOMContentLoaded", () => {
-        const seccionBio = document.getElementById("contenido-indicaciones-bio");
+        const seccionBio = document.getElementById(
+          "contenido-indicaciones-bio",
+        );
         if (!seccionBio) return;
 
         function actualizarTinte() {
@@ -498,7 +501,10 @@
               <a
                 href="#"
                 id="btnVerTableroBio"
-                onclick="verTableroDelDia(); return false;"
+                onclick="
+                  verTableroDelDia();
+                  return false;
+                "
                 class="hidden bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm transition"
               >
                 <i class="fas fa-table mr-1"></i> Ver Tablero del Día
@@ -518,9 +524,16 @@
               >
                 BUSCAR
               </button>
+              <button
+                onclick="cargarKitsPendientesAlarma()"
+                class="bg-orange-100 text-orange-700 border border-orange-300 px-4 py-2 rounded-lg text-xs font-bold hover:bg-orange-200 transition ml-2"
+              >
+                <i class="fas fa-bell mr-1"></i> Kits pendientes (+7 días)
+              </button>
             </div>
           </div>
           <div id="contenedorIndicacionesBio"></div>
+          <div id="panelKitsPendientes" class="hidden bg-white rounded-xl shadow p-4 mt-4 border-2 border-orange-300"></div>
         </div>
       </main>
     </div>
