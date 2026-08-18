@@ -1418,7 +1418,6 @@ app.get("/api/kits/pendientes-alarma", async (req, res) => {
     res.status(500).json({ success: false, pendientes: [] });
   }
 });
-
 app.post("/api/kits/deshacer", async (req, res) => {
   const { dni, tipo_kit, accion } = req.body; // accion: "entrega" | "recepcion"
   if (!dni || !tipo_kit || !accion) {
@@ -1433,6 +1432,11 @@ app.post("/api/kits/deshacer", async (req, res) => {
       .maybeSingle();
 
     if (!registro) return res.json({ success: true });
+
+    // Guardamos la fecha REAL de la acción antes de anularla, para buscar
+    // la fila correcta de tablero_dia (puede ser de días atrás, no de hoy).
+    const fechaAccion =
+      accion === "entrega" ? registro.fecha_entrega : registro.fecha_recepcion;
 
     if (accion === "entrega") {
       if (registro.recibido) {
@@ -1458,7 +1462,6 @@ app.post("/api/kits/deshacer", async (req, res) => {
         .eq("id", registro.id);
     }
 
-    // Releer estado actualizado para decidir si hay que apagar el box de tablero_dia
     const { data: actualizado } = await supabase
       .from("kits_seguimiento")
       .select("entregado, recibido")
@@ -1472,14 +1475,14 @@ app.post("/api/kits/deshacer", async (req, res) => {
           : tipo_kit === "SOMF"
             ? "bio_somf"
             : null;
-      if (campo) {
-        const hoy = new Date().toISOString().split("T")[0];
+      if (campo && fechaAccion) {
+        const fechaFila = fechaAccion.split("T")[0]; // fecha real de la fila en tablero_dia
         const { data: td } = await supabase
           .from("tablero_dia")
           .select("id")
           .eq("dni", dni)
-          .gte("fecha", hoy)
-          .lte("fecha", hoy)
+          .gte("fecha", fechaFila)
+          .lte("fecha", fechaFila)
           .maybeSingle();
         if (td)
           await supabase
@@ -1501,15 +1504,23 @@ app.post("/api/bioquimico/deshacer-extraccion", async (req, res) => {
     return res.status(400).json({ success: false, message: "Faltan datos." });
   }
   try {
+    const { data: fila } = await supabase
+      .from("practicas_autorizadas")
+      .select("fecha_autorizacion")
+      .eq("id", id)
+      .maybeSingle();
+
     await supabase.from("practicas_autorizadas").delete().eq("id", id);
 
-    const hoy = new Date().toISOString().split("T")[0];
+    if (!fila) return res.json({ success: true });
+
+    const fechaFila = fila.fecha_autorizacion.split("T")[0]; // fecha REAL de la práctica, no "hoy"
     const { data: td } = await supabase
       .from("tablero_dia")
       .select("id")
       .eq("dni", dni)
-      .gte("fecha", hoy)
-      .lte("fecha", hoy)
+      .gte("fecha", fechaFila)
+      .lte("fecha", fechaFila)
       .maybeSingle();
 
     if (td) {
