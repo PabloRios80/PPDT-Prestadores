@@ -1223,18 +1223,40 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
           .eq("dni", dni)
           .single();
 
-        await supabase.from("practicas_autorizadas").insert({
-          dni,
-          nombre_completo: afiliado
-            ? `${afiliado.apellido} ${afiliado.nombre}`
-            : null,
-          descripcion_practica: "Práctica bioquímica",
-          estado: "REALIZADA",
-          fecha_autorizacion: hoy,
-          fecha_carga: new Date().toISOString(),
-          id_prestador: idPrestador?.toString(),
-          nombre_prestador: nombrePrestador,
-        });
+        const nombreCompleto = afiliado
+          ? `${afiliado.apellido} ${afiliado.nombre}`
+          : null;
+        const fechaCargaISO = new Date().toISOString();
+
+        // Dos líneas de facturación por el mismo evento, con el MISMO
+        // fecha_carga (permite identificarlas como par al deshacer):
+        // - B040103: pago interno al bioquímico (por cada Día Preventivo).
+        // - 679900: Acto Bioquímico a cargar en SIOS, se liquida al pagador/
+        //   institución, no se traslada al profesional.
+        await supabase.from("practicas_autorizadas").insert([
+          {
+            dni,
+            nombre_completo: nombreCompleto,
+            descripcion_practica: "Práctica bioquímica",
+            codigo_prestacion: "B040103",
+            estado: "REALIZADA",
+            fecha_autorizacion: hoy,
+            fecha_carga: fechaCargaISO,
+            id_prestador: idPrestador?.toString(),
+            nombre_prestador: nombrePrestador,
+          },
+          {
+            dni,
+            nombre_completo: nombreCompleto,
+            descripcion_practica: "Práctica bioquímica",
+            codigo_prestacion: "679900",
+            estado: "REALIZADA",
+            fecha_autorizacion: hoy,
+            fecha_carga: fechaCargaISO,
+            id_prestador: idPrestador?.toString(),
+            nombre_prestador: nombrePrestador,
+          },
+        ]);
       }
     }
 
@@ -1506,11 +1528,23 @@ app.post("/api/bioquimico/deshacer-extraccion", async (req, res) => {
   try {
     const { data: fila } = await supabase
       .from("practicas_autorizadas")
-      .select("fecha_autorizacion")
+      .select("dni, fecha_autorizacion, fecha_carga, descripcion_practica")
       .eq("id", id)
       .maybeSingle();
 
-    await supabase.from("practicas_autorizadas").delete().eq("id", id);
+    if (fila && fila.descripcion_practica === "Práctica bioquímica") {
+      // Este evento genera DOS filas gemelas (B040103 + 679900) con el
+      // mismo fecha_carga: hay que borrar el par completo, no solo la
+      // fila cuyo id llegó desde el frontend, para no dejar huérfana la otra.
+      await supabase
+        .from("practicas_autorizadas")
+        .delete()
+        .eq("dni", fila.dni)
+        .eq("descripcion_practica", "Práctica bioquímica")
+        .eq("fecha_carga", fila.fecha_carga);
+    } else {
+      await supabase.from("practicas_autorizadas").delete().eq("id", id);
+    }
 
     if (!fila) return res.json({ success: true });
 
