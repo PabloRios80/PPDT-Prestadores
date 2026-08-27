@@ -1228,6 +1228,18 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
           : null;
         const fechaCargaISO = new Date().toISOString();
 
+        // La sede no viene del frontend: se toma de la admisión más
+        // reciente del paciente en tablero_dia (mismo criterio que el
+        // backfill general).
+        const { data: admisionReciente } = await supabase
+          .from("tablero_dia")
+          .select("id_sede_dp")
+          .eq("dni", dni)
+          .order("fecha", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const idSedeBioquimica = admisionReciente?.id_sede_dp || null;
+
         // Dos líneas de facturación por el mismo evento, con el MISMO
         // fecha_carga (permite identificarlas como par al deshacer):
         // - B040103: pago interno al bioquímico (por cada Día Preventivo).
@@ -1244,6 +1256,7 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
             fecha_carga: fechaCargaISO,
             id_prestador: idPrestador?.toString(),
             nombre_prestador: nombrePrestador,
+            id_sede_dp: idSedeBioquimica,
           },
           {
             dni,
@@ -1255,6 +1268,7 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
             fecha_carga: fechaCargaISO,
             id_prestador: idPrestador?.toString(),
             nombre_prestador: nombrePrestador,
+            id_sede_dp: idSedeBioquimica,
           },
         ]);
       }
