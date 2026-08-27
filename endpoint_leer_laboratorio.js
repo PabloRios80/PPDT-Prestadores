@@ -6,8 +6,19 @@
 const Anthropic = require("@anthropic-ai/sdk");
 const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
 const { createCanvas } = require("@napi-rs/canvas");
+const path = require("path");
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// Carpeta de fuentes estándar que trae pdfjs-dist. Sin esto, cualquier PDF
+// que use una fuente estándar (Helvetica, Times, etc.) SIN incrustarla en
+// el archivo se renderiza completamente en blanco de texto — la IA nunca
+// recibe ninguna letra, solo logos/líneas/firmas. Esto pasó con el primer
+// PDF de un laboratorio nuevo (MANLAB) y probablemente pase con cualquier
+// laboratorio nuevo que se sume, hasta este fix.
+const STANDARD_FONT_DATA_URL =
+  path.join(require.resolve("pdfjs-dist/package.json"), "..", "standard_fonts") +
+  "/";
 
 // CanvasFactory personalizado: evita que pdfjs-dist intente cargar
 // el paquete 'canvas' clásico (que requiere compilación nativa).
@@ -84,7 +95,11 @@ Si un valor no aparece en el informe, poné null. Sé preciso con los números y
 async function pdfABase64Imagenes(buffer) {
   const data = new Uint8Array(buffer);
   const canvasFactory = new NodeCanvasFactory();
-  const pdf = await pdfjsLib.getDocument({ data, canvasFactory }).promise;
+  const pdf = await pdfjsLib.getDocument({
+    data,
+    canvasFactory,
+    standardFontDataUrl: STANDARD_FONT_DATA_URL,
+  }).promise;
 
   const imagenes = [];
   for (let i = 1; i <= pdf.numPages; i++) {
