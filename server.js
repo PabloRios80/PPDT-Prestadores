@@ -1159,11 +1159,32 @@ app.get("/api/mi-actividad/:mes/:anio", async (req, res) => {
 });
 app.delete("/eliminarPractica/:id", async (req, res) => {
   try {
-    const { error } = await supabase
+    const { data: fila } = await supabase
       .from("practicas_autorizadas")
-      .delete()
-      .eq("id", req.params.id);
-    if (error) throw error;
+      .select("dni, descripcion_practica, fecha_carga")
+      .eq("id", req.params.id)
+      .maybeSingle();
+
+    if (fila && fila.descripcion_practica === "Práctica bioquímica") {
+      // Este evento genera DOS filas gemelas (B040103 + 679900) con el
+      // mismo fecha_carga: hay que borrar el par completo, no solo la
+      // fila cuyo id llegó desde el frontend, para no dejar huérfana la
+      // otra y bloquear sin querer que otro bioquímico la vuelva a cargar.
+      const { error } = await supabase
+        .from("practicas_autorizadas")
+        .delete()
+        .eq("dni", fila.dni)
+        .eq("descripcion_practica", "Práctica bioquímica")
+        .eq("fecha_carga", fila.fecha_carga);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from("practicas_autorizadas")
+        .delete()
+        .eq("id", req.params.id);
+      if (error) throw error;
+    }
+
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
@@ -1207,13 +1228,20 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
     // El código facturable (679900 / B040103) solo corresponde si se marcó
     // Módulo o HPV — SOMF y PSA solos no lo disparan.
     if (seMarcoModulo || hpv) {
+      // Chequeo global por DNI (no por prestador ni por día): el Acto
+      // Bioquímico se factura una sola vez por paciente, sin importar quién
+      // ni cuándo lo cargó. Si el bioquímico necesita repetir la extracción
+      // (ej. paciente sin ayuno), puede seguir marcando resultados
+      // individuales normalmente, pero no se vuelve a generar la
+      // facturación si ya existe.
       const { data: yaExiste } = await supabase
         .from("practicas_autorizadas")
         .select("id")
         .eq("dni", dni)
         .eq("descripcion_practica", "Práctica bioquímica")
-        .eq("id_prestador", idPrestador?.toString())
-        .gte("fecha_carga", `${hoy}T00:00:00`)
+        .eq("estado", "REALIZADA")
+        .in("codigo_prestacion", ["B040103", "679900"])
+        .limit(1)
         .maybeSingle();
 
       if (!yaExiste) {
