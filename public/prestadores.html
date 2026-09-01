@@ -30,7 +30,9 @@
           }
           window.dpProfesional = payload.nombre;
           window.dpRol = payload.profesion;
-          window.dpEsPreventivista = payload.profesion === "preventivista";
+          window.dpEsPreventivista =
+            payload.profesion === "preventivista" ||
+            payload.profesion === "enfermera";
           window.dpIdSedeDp = payload.id_sede_dp || null;
           window.dpToken = token;
           window.dpTokenId = payload.id || null;
@@ -165,7 +167,7 @@
       }
 
       (function () {
-        const SEDES_CON_TABLERO = [1, 2, 4, 6];
+        const SEDES_CON_TABLERO = [1, 4, 6];
         const btnIndicacionesBio =
           document.getElementById("btnIndicacionesBio");
         if (btnIndicacionesBio) {
