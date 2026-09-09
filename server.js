@@ -381,16 +381,23 @@ function evaluarReglas(
       regla.historial_condicion_valor &&
       ultimoDP
     ) {
-      const campoHistorial = mapearCampoHistorial(
+      const campoMapeado = mapearCampoHistorial(
         regla.historial_condicion_campo,
       );
-      const valorHistorial = campoHistorial
-        ? (ultimoDP[campoHistorial] || "").toString().toLowerCase()
-        : "";
+      // Respaldo: si no hay mapeo para este nombre, probamos usarlo tal
+      // cual — algunas reglas (ej. estratificacion_riesgo_cv) ya guardan
+      // el nombre real de la columna en vez de un nombre "bonito".
+      const campoHistorial = campoMapeado || regla.historial_condicion_campo;
+      const valorHistorial = (ultimoDP[campoHistorial] || "")
+        .toString()
+        .toLowerCase();
       const valoresAceptados = regla.historial_condicion_valor
         .toLowerCase()
         .split(",")
         .map((v) => v.trim());
+      if (regla.practica.toLowerCase().includes("papanicolau")) {
+        console.log("DEBUG PAP - regla.id:", regla.id, "| campo original:", regla.historial_condicion_campo, "| campo mapeado:", campoHistorial, "| valorHistorial:", JSON.stringify(valorHistorial), "| valoresAceptados:", JSON.stringify(valoresAceptados));
+      }
       if (!valoresAceptados.some((v) => valorHistorial.includes(v))) continue;
     }
     if (regla.excluir_si_historial_es && ultimoDP) {
