@@ -381,10 +381,12 @@ function evaluarReglas(
       regla.historial_condicion_valor &&
       ultimoDP
     ) {
-      const campoHistorial = regla.historial_condicion_campo;
-      const valorHistorial = (ultimoDP[campoHistorial] || "")
-        .toString()
-        .toLowerCase();
+      const campoHistorial = mapearCampoHistorial(
+        regla.historial_condicion_campo,
+      );
+      const valorHistorial = campoHistorial
+        ? (ultimoDP[campoHistorial] || "").toString().toLowerCase()
+        : "";
       const valoresAceptados = regla.historial_condicion_valor
         .toLowerCase()
         .split(",")
