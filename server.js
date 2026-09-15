@@ -218,13 +218,25 @@ app.get("/getPracticasPrestador/:dni/:especialidad", async (req, res) => {
       await axios.get(`http://localhost:${PORT}/getPreventivePlan/${dni}`);
     }
 
-    const { data, error } = await supabase
+    const { data: todasLasPracticas, error } = await supabase
       .from("practicas_autorizadas")
       .select("*")
-      .eq("dni", dni)
-      .or(keywords.map((k) => `descripcion_practica.ilike.%${k}%`).join(","));
+      .eq("dni", dni);
 
     if (error) throw error;
+
+    // Filtro por palabra clave del lado del servidor — antes se armaba
+    // un .or() gigante con una condición por palabra clave, que con
+    // prestadores de varias categorías (como Delta, con 9) superaba
+    // fácil las 25-30 condiciones encadenadas y podía romperse o
+    // devolver resultados inconsistentes. Acá el paciente típico tiene
+    // unas pocas decenas de filas como mucho, así que filtrar en JS
+    // sale gratis y no tiene límite de largo.
+    const keywordsLower = keywords.map((k) => k.toLowerCase());
+    const data = (todasLasPracticas || []).filter((p) => {
+      const desc = (p.descripcion_practica || "").toLowerCase();
+      return keywordsLower.some((k) => desc.includes(k));
+    });
 
     const { data: afiliado } = await supabase
       .from("afiliados")
