@@ -1186,14 +1186,37 @@ app.delete("/eliminarPractica/:id", async (req, res) => {
       .eq("id", req.params.id)
       .maybeSingle();
 
+    // No se borra la fila — se resetea a AUTORIZADA. La autorización en
+    // sí (que vino del algoritmo o de una excepción cargada por
+    // enfermería/bioquímica) es un hecho que ya ocurrió y hay que
+    // respetarlo; borrar del todo hacía que la práctica desapareciera
+    // para siempre y ya no se pudiera volver a cargar. Se limpian solo
+    // los datos del resultado que se había cargado, no el código de
+    // prestación (que puede haber estado seteado desde la autorización
+    // original, y no corresponde perderlo).
+    const resetCampos = {
+      estado: "AUTORIZADA",
+      resultado_texto: null,
+      enlace_pdf: null,
+      fecha_carga: null,
+      estado_final: null,
+      estado_facturacion: null,
+      id_prestador: null,
+      nombre_prestador: null,
+      observaciones: null,
+      cargado_sios: false,
+      cargado_sios_por: null,
+      fecha_carga_sios: null,
+    };
+
     if (fila && fila.descripcion_practica === "Práctica bioquímica") {
       // Este evento genera DOS filas gemelas (B040103 + 679900) con el
-      // mismo fecha_carga: hay que borrar el par completo, no solo la
-      // fila cuyo id llegó desde el frontend, para no dejar huérfana la
-      // otra y bloquear sin querer que otro bioquímico la vuelva a cargar.
+      // mismo fecha_carga: hay que resetear el par completo, no solo la
+      // fila cuyo id llegó desde el frontend, para no dejar una gemela
+      // reseteada y la otra como si siguiera cargada.
       const { error } = await supabase
         .from("practicas_autorizadas")
-        .delete()
+        .update(resetCampos)
         .eq("dni", fila.dni)
         .eq("descripcion_practica", "Práctica bioquímica")
         .eq("fecha_carga", fila.fecha_carga);
@@ -1201,7 +1224,7 @@ app.delete("/eliminarPractica/:id", async (req, res) => {
     } else {
       const { error } = await supabase
         .from("practicas_autorizadas")
-        .delete()
+        .update(resetCampos)
         .eq("id", req.params.id);
       if (error) throw error;
     }
