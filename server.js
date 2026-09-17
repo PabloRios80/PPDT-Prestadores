@@ -745,6 +745,21 @@ app.post("/savePracticeResult", async (req, res) => {
       .eq("estado", "AUTORIZADA")
       .single();
 
+    // La sede real es siempre la de la admisión en tablero_dia (donde el
+    // paciente inició su Día Preventivo) — la Hoja de Vida no tiene sede
+    // confiable (salvo ATEM, por un link aparte), así que nunca hay que
+    // guiarse por lo que haya quedado puesto en la fila desde el
+    // algoritmo. Mismo criterio que ya usa el bloque de "Práctica
+    // bioquímica" más abajo.
+    const { data: admisionReciente } = await supabase
+      .from("tablero_dia")
+      .select("id_sede_dp")
+      .eq("dni", dni)
+      .order("fecha", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const idSedeReal = admisionReciente?.id_sede_dp || null;
+
     if (existente) {
       await supabase
         .from("practicas_autorizadas")
@@ -755,6 +770,7 @@ app.post("/savePracticeResult", async (req, res) => {
           fecha_carga: new Date().toISOString(),
           id_prestador: idPrestador?.toString(),
           nombre_prestador: nombrePrestador,
+          id_sede_dp: idSedeReal,
         })
         .eq("id", existente.id);
     } else {
@@ -782,6 +798,7 @@ app.post("/savePracticeResult", async (req, res) => {
           nombre_prestador: nombrePrestador,
           observaciones: "Cargado sin autorización previa del algoritmo",
           origen: "prestador",
+          id_sede_dp: idSedeReal,
         });
 
       if (insertError) {
