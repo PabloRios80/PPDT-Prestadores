@@ -620,6 +620,36 @@ app.post("/savePracticeResult", async (req, res) => {
     nombrePrestador,
   } = req.body;
 
+  // Código de prestación oficial por descripción — el algoritmo que crea
+  // la fila AUTORIZADA no siempre lo setea, así que se resuelve acá como
+  // red de seguridad al momento de cargar el resultado. "formula filtrado
+  // glomerular" queda afuera a propósito: es un valor calculado, nunca
+  // tuvo código SIOS propio.
+  const CODIGOS_POR_DESCRIPCION = {
+    "glucemia en ayunas": "679904",
+    "colesterol total": "679902",
+    "hdl/colesterol": "679907",
+    "ldl/colesterol": "679913",
+    trigliceridos: "679906",
+    creatinina: "679903",
+    "anticuerpos anti_vih": "679901",
+    "hepatitis b antigeno de superficie_aghb": "679909",
+    "hepatitis b anti core": "679908",
+    "hepatitis c _hcv_ac_igg": "679910",
+    vdrl: "679918",
+    "test chagas hai": "679917",
+    "test chagas eclia": "679923",
+    "test hpv genotipo 16": "679912",
+    "test hpv genotipo 18": "679912",
+    "test hpv otros genotipos alto riesgo": "679912",
+    "sangre oculta en materia fecal - somf": "679905",
+    "antigeno prostatico especifico total - psa": "679915",
+    "psa (antígeno prostático específico)": "679915",
+    "enseñanza técnica h.o.": "050499",
+  };
+  const codigoResuelto =
+    CODIGOS_POR_DESCRIPCION[(descripcion || "").toLowerCase().trim()] || null;
+
   const MAPA_LAB_HISTORICAS = {
     somf: "somf",
     "sangre oculta": "somf",
@@ -771,6 +801,9 @@ app.post("/savePracticeResult", async (req, res) => {
           id_prestador: idPrestador?.toString(),
           nombre_prestador: nombrePrestador,
           id_sede_dp: idSedeReal,
+          // Solo se pisa si tenemos un código resuelto — así no se borra
+          // un código que ya estuviera bien puesto por otra vía.
+          ...(codigoResuelto ? { codigo_prestacion: codigoResuelto } : {}),
         })
         .eq("id", existente.id);
     } else {
@@ -789,6 +822,7 @@ app.post("/savePracticeResult", async (req, res) => {
           dni,
           nombre_completo: nombreCompleto,
           descripcion_practica: descripcion,
+          codigo_prestacion: codigoResuelto,
           estado: "REALIZADA",
           resultado_texto: resultadoValor,
           enlace_pdf: enlacePdf,
