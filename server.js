@@ -186,23 +186,42 @@ app.get("/getPracticasPrestador/:dni/:especialidad", async (req, res) => {
 
   try {
     let keywords = [];
+    const claveNormalizada = ALIAS_ESPECIALIDAD[especialidad] || especialidad;
+
+    // Algunas especialidades del login agrupan varias categorías finas de
+    // prestador_practicas (ej. "Diagnóstico por Imágenes" cubre mamografía,
+    // ecografía abdominal, ecografía mamaria y densitometría a la vez) —
+    // mismo agrupamiento que ya usa tablero-dia para el desplegable de
+    // prestadores, para no dejar afuera nada de lo que el PV vino a cargar.
+    const CATEGORIAS_AGRUPADAS = {
+      imagenes: ["mamografia", "ecografia_abdominal", "ecografia_mamaria", "densitometria"],
+    };
+    const categoriasBuscadas =
+      CATEGORIAS_AGRUPADAS[claveNormalizada] || [claveNormalizada];
 
     if (id_prestador) {
-      // Prestador real: combinar TODAS sus categorías asignadas
+      // Prestador real: solo la(s) categoría(s) que corresponden a la
+      // especialidad elegida al loguearse, no todas las que tenga asignadas
+      // el prestador en total — un prestador con varias categorías (como
+      // Hospital Italiano Rosario, con 9) mostraba de más si no se filtraba.
       const { data: asignadas } = await supabase
         .from("prestador_practicas")
         .select("practica")
         .eq("id_prestador", id_prestador);
 
-      (asignadas || []).forEach((a) => {
-        keywords = keywords.concat(KEYWORDS_POR_CATEGORIA[a.practica] || []);
+      const practicasAsignadas = (asignadas || []).map((a) => a.practica);
+      const practicasFiltradas = practicasAsignadas.filter((p) =>
+        categoriasBuscadas.includes(p),
+      );
+      practicasFiltradas.forEach((p) => {
+        keywords = keywords.concat(KEYWORDS_POR_CATEGORIA[p] || []);
       });
     }
 
-    // Respaldo: si no vino id_prestador o no tiene nada asignado, usar el
+    // Respaldo: si no vino id_prestador, o el prestador no tiene asignada
+    // justo la categoría elegida (desajuste de datos), usar el
     // comportamiento anterior por especialidad (compatibilidad).
     if (keywords.length === 0) {
-      const claveNormalizada = ALIAS_ESPECIALIDAD[especialidad] || especialidad;
       keywords = KEYWORDS_POR_CATEGORIA[claveNormalizada] || [];
     }
 
