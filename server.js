@@ -637,6 +637,7 @@ app.post("/savePracticeResult", async (req, res) => {
     archivoNombre,
     idPrestador,
     nombrePrestador,
+    idPractica, // id de la fila en la que el prestador tocó "CARGAR" (opcional)
   } = req.body;
 
   // Código de prestación oficial por descripción — el algoritmo que crea
@@ -665,8 +666,18 @@ app.post("/savePracticeResult", async (req, res) => {
     "antigeno prostatico especifico total - psa": "679915",
     "psa (antígeno prostático específico)": "679915",
     "enseñanza técnica h.o.": "050499",
+    // No-laboratorio: antes faltaban y todo lo cargado "sin autorización"
+    // de imágenes, espirometría, PAP, etc. quedaba sin código (no
+    // matcheaba con SIOS ni entraba en ningún informe).
+    mamografia: "65007",
+    "ecografia mamaria": "185087",
+    "ecografia abdominal": "185086",
+    "densitometria osea": "345099",
+    espirometria: "285011",
+    papanicolau: "155012",
+    "videocolonoscopia - vcc": "205011",
   };
-  const codigoResuelto =
+  let codigoResuelto =
     CODIGOS_POR_DESCRIPCION[(descripcion || "").toLowerCase().trim()] || null;
 
   const MAPA_LAB_HISTORICAS = {
@@ -786,13 +797,75 @@ app.post("/savePracticeResult", async (req, res) => {
       }
     }
 
-    const { data: existente } = await supabase
-      .from("practicas_autorizadas")
-      .select("id")
-      .eq("dni", dni)
-      .ilike("descripcion_practica", `%${descripcion}%`)
-      .eq("estado", "AUTORIZADA")
-      .single();
+    // ── Buscar la fila autorizada a completar ──
+    // Antes: .ilike("%desc%") + .single(). Si había DOS filas AUTORIZADA
+    // (p. ej. una del algoritmo y otra que dejó un "Eliminar"), .single()
+    // fallaba, "existente" quedaba vacío y se insertaba una fila NUEVA
+    // "sin autorización" (sin código) en cada carga: así se generaban los
+    // duplicados. Ahora:
+    //   1) si el frontend manda idPractica, se usa esa fila exacta;
+    //   2) si no, la AUTORIZADA más antigua con esa descripción exacta,
+    //      prefiriendo la que tiene código.
+    let existente = null;
+    if (idPractica) {
+      const { data: filaElegida } = await supabase
+        .from("practicas_autorizadas")
+        .select("id, dni, estado")
+        .eq("id", idPractica)
+        .maybeSingle();
+      if (filaElegida && filaElegida.dni === dni && filaElegida.estado === "AUTORIZADA") {
+        existente = filaElegida;
+      }
+    }
+    if (!existente) {
+      const { data: autorizadas } = await supabase
+        .from("practicas_autorizadas")
+        .select("id, codigo_prestacion, fecha_autorizacion")
+        .eq("dni", dni)
+        .ilike("descripcion_practica", descripcion)
+        .eq("estado", "AUTORIZADA")
+        .order("fecha_autorizacion", { ascending: true });
+      existente =
+        (autorizadas || []).find((a) => a.codigo_prestacion) ||
+        (autorizadas || [])[0] ||
+        null;
+    }
+
+    // ── Freno de duplicados ──
+    // Sin fila autorizada, antes de crear una "sin autorización" se
+    // verifica que no esté ya cargada la misma práctica para el mismo
+    // paciente en los últimos 60 días (doble clic, recarga de página,
+    // "Eliminar" + volver a cargar).
+    if (!existente) {
+      const hace60 = new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString();
+      const { data: yaCargadas } = await supabase
+        .from("practicas_autorizadas")
+        .select("id")
+        .eq("dni", dni)
+        .ilike("descripcion_practica", descripcion)
+        .eq("estado", "REALIZADA")
+        .gte("fecha_carga", hace60)
+        .limit(1);
+      if (yaCargadas && yaCargadas.length > 0) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "Esta práctica ya está cargada para este paciente. Si querés reemplazar el resultado, eliminá primero la carga anterior.",
+        });
+      }
+    }
+
+    // Si todavía no hay código, se toma de cualquier fila de la base con
+    // la misma descripción que sí lo tenga.
+    if (!codigoResuelto) {
+      const { data: conCodigo } = await supabase
+        .from("practicas_autorizadas")
+        .select("codigo_prestacion")
+        .ilike("descripcion_practica", descripcion)
+        .not("codigo_prestacion", "is", null)
+        .limit(1);
+      codigoResuelto = conCodigo?.[0]?.codigo_prestacion || null;
+    }
 
     // La sede real es siempre la de la admisión en tablero_dia (donde el
     // paciente inició su Día Preventivo) — la Hoja de Vida no tiene sede
@@ -1252,9 +1325,51 @@ app.delete("/eliminarPractica/:id", async (req, res) => {
   try {
     const { data: fila } = await supabase
       .from("practicas_autorizadas")
-      .select("dni, descripcion_practica, fecha_carga")
+      .select("dni, descripcion_practica, fecha_carga, cargado_sios, origen")
       .eq("id", req.params.id)
       .maybeSingle();
+
+    if (!fila) {
+      return res.status(404).json({ success: false, message: "Práctica no encontrada." });
+    }
+
+    // "La verdad está en SIOS": lo que ya se facturó en SIOS no se puede
+    // deshacer desde el portal. Antes se reseteaba y se perdía la marca.
+    if (fila.cargado_sios) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Esta práctica ya fue facturada en SIOS y no se puede eliminar. Si hay que corregir el resultado, avisá a la coordinación.",
+      });
+    }
+    if (fila.descripcion_practica === "Práctica bioquímica") {
+      const { data: gemelaSios } = await supabase
+        .from("practicas_autorizadas")
+        .select("id")
+        .eq("dni", fila.dni)
+        .eq("descripcion_practica", "Práctica bioquímica")
+        .eq("fecha_carga", fila.fecha_carga)
+        .eq("cargado_sios", true)
+        .limit(1);
+      if (gemelaSios && gemelaSios.length > 0) {
+        return res.status(409).json({
+          success: false,
+          message: "Esta práctica ya fue facturada en SIOS y no se puede eliminar.",
+        });
+      }
+    }
+
+    // Una fila que creó el propio portal ("sin autorización previa") no
+    // es una autorización: se borra del todo. Antes se reseteaba a
+    // AUTORIZADA y quedaba como una habilitación nueva (duplicada).
+    if (fila.origen === "prestador" && fila.descripcion_practica !== "Práctica bioquímica") {
+      const { error } = await supabase
+        .from("practicas_autorizadas")
+        .delete()
+        .eq("id", req.params.id);
+      if (error) throw error;
+      return res.json({ success: true });
+    }
 
     // No se borra la fila — se resetea a AUTORIZADA. La autorización en
     // sí (que vino del algoritmo o de una excepción cargada por
@@ -1274,9 +1389,7 @@ app.delete("/eliminarPractica/:id", async (req, res) => {
       id_prestador: null,
       nombre_prestador: null,
       observaciones: null,
-      cargado_sios: false,
-      cargado_sios_por: null,
-      fecha_carga_sios: null,
+      // cargado_sios no se toca: si estaba en true ya se cortó arriba.
     };
 
     if (fila && fila.descripcion_practica === "Práctica bioquímica") {
