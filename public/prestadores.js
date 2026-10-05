@@ -924,6 +924,7 @@ function cerrarModalPDFLab() {
   document.getElementById("modalPDFLab").classList.add("hidden");
   document.getElementById("contenedorInformes").innerHTML = "";
   document.getElementById("pdfResultado").classList.add("hidden");
+  document.getElementById("pdfResultado").style.maxHeight = "";
 }
 
 function agregarInforme() {
@@ -963,6 +964,110 @@ function agregarInforme() {
   contenedor.appendChild(div);
 }
 
+// ==========================================
+// CATÁLOGO DE CAMPOS DE LABORATORIO (compartido IA / carga manual)
+// ==========================================
+const ETIQUETAS_LAB = {
+  glucemia: "Glucemia",
+  creatinina: "Creatinina",
+  indice_filtrado_glomerular: "Índice Filtrado Glomerular",
+  colesterol_total: "Colesterol Total",
+  colesterol_hdl: "Colesterol HDL",
+  colesterol_ldl: "Colesterol LDL",
+  trigliceridos: "Triglicéridos",
+  hiv: "HIV",
+  hepatitis_b_antigeno_superficie: "Hepatitis B Ag Superficie",
+  hepatitis_b_anti_core: "Hepatitis B Anti Core",
+  hepatitis_c: "Hepatitis C",
+  vdrl: "VDRL",
+  sifilis_treponemica: "Sífilis - Prueba Treponémica",
+  psa: "PSA",
+  chagas_hai: "Chagas HAI",
+  chagas_eclia: "Chagas ECLIA",
+  hpv_genotipo_16: "HPV Genotipo 16",
+  hpv_genotipo_18: "HPV Genotipo 18",
+  hpv_otros: "HPV Otros Genotipos Alto Riesgo",
+  hemoglobina_glicosilada: "Hemoglobina Glicosilada",
+  microalbuminuria: "Microalbuminuria",
+  proteinuria: "Proteinuria",
+  clearence_creatinina: "Clearence Creatinina",
+  somf: "SOMF",
+  creatinina_orina_espontanea: "Creatinina Orina Espontánea",
+  rac_albumina_creatinina: "RAC - Relación Albúmina/Creatinina",
+};
+
+const MAPEO_PRACTICAS_LAB = {
+  glucemia: "glucemia en ayunas",
+  creatinina: "creatinina",
+  indice_filtrado_glomerular: "formula filtrado glomerular",
+  colesterol_total: "colesterol total",
+  colesterol_hdl: "HDL/colesterol",
+  colesterol_ldl: "LDL/colesterol",
+  trigliceridos: "trigliceridos",
+  hiv: "anticuerpos anti_VIH",
+  hepatitis_b_antigeno_superficie: "hepatitis b antigeno de superficie_AGHB",
+  hepatitis_b_anti_core: "hepatitis b anti core",
+  hepatitis_c: "hepatitis c _HCV_AC_IGG",
+  vdrl: "VDRL",
+  sifilis_treponemica: "sifilis prueba treponemica ECLIA",
+  psa: "antigeno prostatico especifico total - PSA",
+  chagas_hai: "test chagas HAI",
+  chagas_eclia: "test chagas ECLIA",
+  hpv_genotipo_16: "test HPV genotipo 16",
+  hpv_genotipo_18: "test HPV genotipo 18",
+  hpv_otros: "test HPV otros genotipos alto riesgo",
+  hemoglobina_glicosilada: "hemoglobina glicosilada",
+  microalbuminuria: "microalbuminuria",
+  proteinuria: "proteinuria",
+  clearence_creatinina: "clearence creatinina",
+  somf: "sangre oculta en materia fecal - SOMF",
+  creatinina_orina_espontanea: "RAC - creatinina orina",
+  rac_albumina_creatinina: "RAC - Relación Albúmina/Creatinina",
+};
+
+// ==========================================
+// CAMPOS PARA CARGA MANUAL (cuando la IA no está disponible)
+// tipo "num": valor numérico libre | "sero": serología | "hpv": detectable/no
+// ==========================================
+const CAMPOS_LAB_MANUAL = [
+  { grupo: "Química", campo: "glucemia", tipo: "num", ph: "ej: 0.95 (g/L)" },
+  { grupo: "Química", campo: "creatinina", tipo: "num", ph: "ej: 0.85" },
+  { grupo: "Química", campo: "indice_filtrado_glomerular", tipo: "num", ph: "ej: 95" },
+  { grupo: "Química", campo: "colesterol_total", tipo: "num", ph: "ej: 190" },
+  { grupo: "Química", campo: "colesterol_hdl", tipo: "num", ph: "ej: 52" },
+  { grupo: "Química", campo: "colesterol_ldl", tipo: "num", ph: "ej: 110" },
+  { grupo: "Química", campo: "trigliceridos", tipo: "num", ph: "ej: 130" },
+  { grupo: "Química", campo: "hemoglobina_glicosilada", tipo: "num", ph: "ej: 5.4" },
+  { grupo: "Química", campo: "psa", tipo: "num", ph: "ej: 1.2" },
+  { grupo: "Serologías", campo: "hiv", tipo: "sero" },
+  { grupo: "Serologías", campo: "hepatitis_b_antigeno_superficie", tipo: "sero" },
+  { grupo: "Serologías", campo: "hepatitis_b_anti_core", tipo: "sero" },
+  { grupo: "Serologías", campo: "hepatitis_c", tipo: "sero" },
+  { grupo: "Serologías", campo: "vdrl", tipo: "sero" },
+  { grupo: "Serologías", campo: "sifilis_treponemica", tipo: "sero" },
+  { grupo: "Serologías", campo: "chagas_hai", tipo: "sero" },
+  { grupo: "Serologías", campo: "chagas_eclia", tipo: "sero" },
+  { grupo: "HPV", campo: "hpv_genotipo_16", tipo: "hpv" },
+  { grupo: "HPV", campo: "hpv_genotipo_18", tipo: "hpv" },
+  { grupo: "HPV", campo: "hpv_otros", tipo: "hpv" },
+  { grupo: "Orina y materia fecal", campo: "microalbuminuria", tipo: "num", ph: "" },
+  { grupo: "Orina y materia fecal", campo: "proteinuria", tipo: "num", ph: "" },
+  { grupo: "Orina y materia fecal", campo: "clearence_creatinina", tipo: "num", ph: "" },
+  { grupo: "Orina y materia fecal", campo: "creatinina_orina_espontanea", tipo: "num", ph: "" },
+  { grupo: "Orina y materia fecal", campo: "rac_albumina_creatinina", tipo: "num", ph: "" },
+  { grupo: "Orina y materia fecal", campo: "somf", tipo: "sero" },
+];
+
+const OPCIONES_LAB_MANUAL = {
+  sero: ["NEGATIVO", "NO REACTIVO", "POSITIVO", "REACTIVO"],
+  hpv: ["NO DETECTABLE", "DETECTABLE"],
+};
+
+function esErrorDeCreditoIA(mensaje) {
+  const m = (mensaje || "").toLowerCase();
+  return m.includes("credit balance") || m.includes("billing");
+}
+
 async function procesarTodosLosInformes() {
   const bloquesInforme = document.querySelectorAll("#contenedorInformes > div");
   const dni = document.getElementById("dniSearch").value.trim();
@@ -984,112 +1089,216 @@ async function procesarTodosLosInformes() {
     return alert("Subí al menos un PDF o pegá un link de Drive.");
 
   resultadoDiv.classList.remove("hidden");
+  resultadoDiv.style.maxHeight = "";
   resultadoDiv.innerHTML = `
     <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
       <i class="fas fa-spinner fa-spin text-blue-600 text-2xl mb-2"></i>
       <p class="text-blue-700">Leyendo informe${entradas.length > 1 ? "s" : ""} con IA, puede tardar unos segundos...</p>
     </div>`;
 
-  try {
-    const resultados = [];
-    for (const entrada of entradas) {
-      let data;
-      if (entrada.tipo === "archivo") {
-        const base64 = await toBase64(entrada.archivo);
+  // Cada informe se procesa por separado: si la IA falla en uno,
+  // el PDF igual se conserva para guardarlo con carga manual.
+  const resultados = []; // informes leídos OK por la IA
+  const archivosPDF = []; // todos los PDFs disponibles para adjuntar
+  const fallidos = []; // { nombre, mensaje, sinPDF }
+
+  for (const entrada of entradas) {
+    if (entrada.tipo === "archivo") {
+      let base64;
+      try {
+        base64 = await toBase64(entrada.archivo);
+      } catch (e) {
+        fallidos.push({ nombre: entrada.archivo.name, mensaje: "No se pudo leer el archivo.", sinPDF: true });
+        continue;
+      }
+      archivosPDF.push({ base64, nombre: entrada.archivo.name });
+      try {
         const response = await fetch("/leerLaboratorioPDF", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ archivoBase64: base64 }),
         });
-        data = await response.json();
-        if (!data.success)
-          throw new Error(data.message || "Error leyendo el PDF.");
-        resultados.push({
-          valores: data.valores,
-          base64,
-          nombre: entrada.archivo.name,
-        });
-      } else {
+        const data = await response.json();
+        if (!data.success) throw new Error(data.message || "Error leyendo el PDF.");
+        resultados.push({ valores: data.valores, nombre: entrada.archivo.name });
+      } catch (e) {
+        fallidos.push({ nombre: entrada.archivo.name, mensaje: e.message, sinPDF: false });
+      }
+    } else {
+      try {
         const response = await fetch("/leerLaboratorioPDFDesdeLink", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ link: entrada.link }),
         });
-        data = await response.json();
+        const data = await response.json();
         if (!data.success)
-          throw new Error(
-            data.message || "Error leyendo el PDF desde el link.",
-          );
-        resultados.push({
-          valores: data.valores,
-          base64: data.archivoBase64,
-          nombre: "informe_drive.pdf",
-        });
+          throw new Error(data.message || "Error leyendo el PDF desde el link.");
+        archivosPDF.push({ base64: data.archivoBase64, nombre: "informe_drive.pdf" });
+        resultados.push({ valores: data.valores, nombre: "informe_drive.pdf" });
+      } catch (e) {
+        // Con link de Drive, si falla la IA el servidor no devuelve el PDF
+        fallidos.push({ nombre: "Link de Drive", mensaje: e.message, sinPDF: true });
       }
     }
+  }
 
-    const dnisDiferentes = [];
-    resultados.forEach((r, i) => {
-      const dniDetectado = r.valores.dni_paciente;
-      if (
-        dniDetectado &&
-        dniDetectado.replace(/\D/g, "") !== dni.replace(/\D/g, "")
-      ) {
-        dnisDiferentes.push({ informe: i + 1, dniDetectado });
-      }
-    });
+  window._archivosPDFLab = archivosPDF;
 
-    if (dnisDiferentes.length > 0) {
-      const mensajes = dnisDiferentes
-        .map((d) => `Informe ${d.informe}: DNI ${d.dniDetectado}`)
-        .join("\n");
-      const confirmar = confirm(
-        `⚠️ ATENCIÓN: Se detectaron informes con DNI diferente al paciente buscado (${dni}):\n\n` +
-          `${mensajes}\n\n¿Querés continuar igualmente cargando todo para el DNI ${dni}?`,
-      );
-      if (!confirmar) {
-        resultadoDiv.classList.add("hidden");
-        return;
-      }
+  // Control de DNI (solo sobre lo que leyó la IA)
+  const dnisDiferentes = [];
+  resultados.forEach((r, i) => {
+    const dniDetectado = r.valores && r.valores.dni_paciente;
+    if (dniDetectado && dniDetectado.replace(/\D/g, "") !== dni.replace(/\D/g, "")) {
+      dnisDiferentes.push({ informe: r.nombre || i + 1, dniDetectado });
     }
+  });
 
-    let valoresCombinados = {};
-    resultados.forEach((r) => {
-      Object.entries(r.valores).forEach(([campo, valor]) => {
-        if (campo === "dni_paciente") return;
-        if (valor && !valoresCombinados[campo])
-          valoresCombinados[campo] = valor;
-      });
-    });
-
-    const valoresConDatos = Object.entries(valoresCombinados).filter(
-      ([k, v]) => v,
+  if (dnisDiferentes.length > 0) {
+    const mensajes = dnisDiferentes
+      .map((d) => `Informe ${d.informe}: DNI ${d.dniDetectado}`)
+      .join("\n");
+    const confirmar = confirm(
+      `⚠️ ATENCIÓN: Se detectaron informes con DNI diferente al paciente buscado (${dni}):\n\n` +
+        `${mensajes}\n\n¿Querés continuar igualmente cargando todo para el DNI ${dni}?`,
     );
-    if (valoresConDatos.length === 0) {
-      resultadoDiv.innerHTML = `
-        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
-          <p class="text-yellow-700">No se encontraron valores en el/los informe(s). Verificá que sean los PDFs correctos.</p>
-        </div>`;
+    if (!confirmar) {
+      resultadoDiv.classList.add("hidden");
       return;
     }
+  }
 
-    window._archivosPDFLab = resultados.map((r) => ({
-      base64: r.base64,
-      nombre: r.nombre,
-    }));
-
-    mostrarValoresExtraidos({
-      dni,
-      nombre: "",
-      apellido: "",
-      valores: valoresCombinados,
+  let valoresCombinados = {};
+  resultados.forEach((r) => {
+    Object.entries(r.valores || {}).forEach(([campo, valor]) => {
+      if (campo === "dni_paciente") return;
+      if (valor && !valoresCombinados[campo]) valoresCombinados[campo] = valor;
     });
-  } catch (e) {
+  });
+
+  // Si algo falló, pasamos a carga manual (precargada con lo que sí se leyó)
+  if (fallidos.length > 0) {
+    if (fallidos.some((f) => esErrorDeCreditoIA(f.mensaje))) {
+      console.warn("IA laboratorio: sin crédito en la API de Anthropic.");
+    }
+    mostrarFormularioManualLab(dni, valoresCombinados, fallidos);
+    return;
+  }
+
+  const valoresConDatos = Object.entries(valoresCombinados).filter(([k, v]) => v);
+  if (valoresConDatos.length === 0) {
     resultadoDiv.innerHTML = `
-      <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
-        <p class="text-red-600">Error: ${e.message}</p>
+      <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+        <p class="text-yellow-700 mb-3">No se encontraron valores en el/los informe(s). Verificá que sean los PDFs correctos.</p>
+        <button id="btnIrManualLab"
+          class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold">
+          Cargar valores manualmente
+        </button>
+      </div>`;
+    document.getElementById("btnIrManualLab").addEventListener("click", () => {
+      mostrarFormularioManualLab(dni, {}, []);
+    });
+    return;
+  }
+
+  mostrarValoresExtraidos({ dni, nombre: "", apellido: "", valores: valoresCombinados });
+}
+
+// ==========================================
+// FORMULARIO DE CARGA MANUAL DE LABORATORIO
+// ==========================================
+function mostrarFormularioManualLab(dni, valoresPrevios, fallidos) {
+  const resultadoDiv = document.getElementById("pdfResultado");
+  const archivos = window._archivosPDFLab || [];
+  const sinCredito = fallidos.some((f) => esErrorDeCreditoIA(f.mensaje));
+  const linksSinPDF = fallidos.filter((f) => f.sinPDF);
+
+  let aviso = "";
+  if (fallidos.length > 0) {
+    aviso = `
+      <div class="bg-yellow-50 border border-yellow-300 rounded-lg p-3 mb-3 text-sm text-yellow-800">
+        <p class="font-bold mb-1"><i class="fas fa-exclamation-triangle mr-1"></i>
+          ${sinCredito
+            ? "La lectura automática con IA no está disponible en este momento."
+            : "No se pudo leer automáticamente " + (fallidos.length > 1 ? "algunos informes" : "un informe") + "."}
+        </p>
+        <p>Completá los resultados a mano copiándolos del informe. El PDF se guarda igual para que el médico lo consulte.</p>
+        ${Object.keys(valoresPrevios).length > 0
+          ? '<p class="mt-1">Los valores que sí se pudieron leer ya están precargados: revisalos.</p>'
+          : ""}
+        ${linksSinPDF.length > 0
+          ? '<p class="mt-1 font-bold">⚠️ El PDF del link de Drive no se pudo adjuntar. Descargalo y subilo como archivo.</p>'
+          : ""}
       </div>`;
   }
+
+  const grupos = {};
+  CAMPOS_LAB_MANUAL.forEach((c) => {
+    (grupos[c.grupo] = grupos[c.grupo] || []).push(c);
+  });
+
+  const escaparAttr = (t) => String(t || "").replace(/"/g, "&quot;");
+
+  let camposHtml = "";
+  Object.entries(grupos).forEach(([grupo, campos]) => {
+    camposHtml += `<p class="text-xs font-bold text-gray-500 uppercase mt-3 mb-1">${grupo}</p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">`;
+    campos.forEach((c) => {
+      const valor = escaparAttr(valoresPrevios[c.campo]);
+      const lista = OPCIONES_LAB_MANUAL[c.tipo] ? `listaLab_${c.tipo}` : "";
+      const ph = c.tipo === "num" ? c.ph : "elegí o escribí";
+      camposHtml += `
+        <label class="text-xs text-gray-600">
+          ${ETIQUETAS_LAB[c.campo] || c.campo}
+          <input type="text" data-campo-lab="${c.campo}" value="${valor}"
+            ${lista ? `list="${lista}"` : ""} placeholder="${escaparAttr(ph)}"
+            class="w-full border border-gray-300 rounded-md p-1.5 text-sm mt-0.5 outline-none focus:ring-2 focus:ring-blue-500">
+        </label>`;
+    });
+    camposHtml += `</div>`;
+  });
+
+  const datalists = Object.entries(OPCIONES_LAB_MANUAL)
+    .map(([tipo, opciones]) =>
+      `<datalist id="listaLab_${tipo}">${opciones.map((o) => `<option value="${o}">`).join("")}</datalist>`)
+    .join("");
+
+  resultadoDiv.classList.remove("hidden");
+  resultadoDiv.style.maxHeight = "60vh";
+  resultadoDiv.innerHTML = `
+    ${aviso}
+    <p class="text-sm text-gray-700">
+      <i class="fas fa-paperclip mr-1"></i>PDFs que se van a adjuntar: <strong>${archivos.length}</strong>
+      ${archivos.map((a) => `<span class="text-xs text-gray-500 ml-1">(${a.nombre})</span>`).join("")}
+    </p>
+    <p class="text-xs text-gray-500 mt-1">Completá solo las prácticas que figuran en el informe. Las vacías no se guardan.</p>
+    ${camposHtml}
+    ${datalists}
+    <div class="text-center mt-4">
+      <button id="btnContinuarManualLab"
+        class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-bold">
+        Continuar a revisión
+      </button>
+    </div>`;
+
+  document.getElementById("btnContinuarManualLab").addEventListener("click", () => {
+    if ((window._archivosPDFLab || []).length === 0) {
+      return alert(
+        "No hay ningún PDF adjunto. Subí el informe como archivo para que el médico pueda ver el original firmado.",
+      );
+    }
+    const valores = {};
+    resultadoDiv.querySelectorAll("[data-campo-lab]").forEach((input) => {
+      const v = input.value.trim();
+      if (v) valores[input.dataset.campoLab] = v.toUpperCase().match(/^[A-Z ]+$/) ? v.toUpperCase() : v;
+    });
+    if (Object.keys(valores).length === 0) {
+      return alert("Completá al menos un resultado.");
+    }
+    resultadoDiv.style.maxHeight = "";
+    // Desde acá sigue el circuito normal: semáforo → confirmar → guardar
+    mostrarValoresExtraidos({ dni, nombre: "", apellido: "", valores });
+  });
 }
 
 // ==========================================
@@ -1098,63 +1307,8 @@ async function procesarTodosLosInformes() {
 function mostrarValoresExtraidos(data) {
   const resultadoDiv = document.getElementById("pdfResultado");
 
-  const ETIQUETAS = {
-    glucemia: "Glucemia",
-    creatinina: "Creatinina",
-    indice_filtrado_glomerular: "Índice Filtrado Glomerular",
-    colesterol_total: "Colesterol Total",
-    colesterol_hdl: "Colesterol HDL",
-    colesterol_ldl: "Colesterol LDL",
-    trigliceridos: "Triglicéridos",
-    hiv: "HIV",
-    hepatitis_b_antigeno_superficie: "Hepatitis B Ag Superficie",
-    hepatitis_b_anti_core: "Hepatitis B Anti Core",
-    hepatitis_c: "Hepatitis C",
-    vdrl: "VDRL",
-    sifilis_treponemica: "Sífilis - Prueba Treponémica",
-    psa: "PSA",
-    chagas_hai: "Chagas HAI",
-    chagas_eclia: "Chagas ECLIA",
-    hpv_genotipo_16: "HPV Genotipo 16",
-    hpv_genotipo_18: "HPV Genotipo 18",
-    hpv_otros: "HPV Otros Genotipos Alto Riesgo",
-    hemoglobina_glicosilada: "Hemoglobina Glicosilada",
-    microalbuminuria: "Microalbuminuria",
-    proteinuria: "Proteinuria",
-    clearence_creatinina: "Clearence Creatinina",
-    somf: "SOMF",
-    creatinina_orina_espontanea: "Creatinina Orina Espontánea",
-    rac_albumina_creatinina: "RAC - Relación Albúmina/Creatinina",
-  };
-
-  const MAPEO_PRACTICAS = {
-    glucemia: "glucemia en ayunas",
-    creatinina: "creatinina",
-    indice_filtrado_glomerular: "formula filtrado glomerular",
-    colesterol_total: "colesterol total",
-    colesterol_hdl: "HDL/colesterol",
-    colesterol_ldl: "LDL/colesterol",
-    trigliceridos: "trigliceridos",
-    hiv: "anticuerpos anti_VIH",
-    hepatitis_b_antigeno_superficie: "hepatitis b antigeno de superficie_AGHB",
-    hepatitis_b_anti_core: "hepatitis b anti core",
-    hepatitis_c: "hepatitis c _HCV_AC_IGG",
-    vdrl: "VDRL",
-    sifilis_treponemica: "sifilis prueba treponemica ECLIA",
-    psa: "antigeno prostatico especifico total - PSA",
-    chagas_hai: "test chagas HAI",
-    chagas_eclia: "test chagas ECLIA",
-    hpv_genotipo_16: "test HPV genotipo 16",
-    hpv_genotipo_18: "test HPV genotipo 18",
-    hpv_otros: "test HPV otros genotipos alto riesgo",
-    hemoglobina_glicosilada: "hemoglobina glicosilada",
-    microalbuminuria: "microalbuminuria",
-    proteinuria: "proteinuria",
-    clearence_creatinina: "clearence creatinina",
-    somf: "sangre oculta en materia fecal - SOMF",
-    creatinina_orina_espontanea: "RAC - creatinina orina",
-    rac_albumina_creatinina: "RAC - Relación Albúmina/Creatinina",
-  };
+  const ETIQUETAS = ETIQUETAS_LAB;
+  const MAPEO_PRACTICAS = MAPEO_PRACTICAS_LAB;
 
   const valores = data.valores;
   const valoresConDatos = Object.entries(valores).filter(([k, v]) => v);
