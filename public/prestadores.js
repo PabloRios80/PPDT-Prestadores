@@ -793,7 +793,7 @@ function evaluarSemaforo(campo, valor, datosAfiliado) {
 
   if (campo === "glucemia") {
     if (isNaN(vNum)) return null;
-    const glucVal = vUpper.includes("MG") ? vNum / 1000 : vNum;
+    const glucVal = vUpper.includes("MG") || vNum > 10 ? vNum / 100 : vNum;
     if (glucVal <= 1.0) return VERDE;
     if (glucVal <= 1.25) return AMARILLO;
     return ROJO;
@@ -1304,13 +1304,66 @@ function mostrarFormularioManualLab(dni, valoresPrevios, fallidos) {
 // ==========================================
 // MOSTRAR VALORES CON SEMÁFORO
 // ==========================================
+// ==========================================
+// NORMALIZACIÓN DE UNIDADES (laboratorios con distinto formato)
+// Lípidos -> mg/dl | Glucemia -> g/l | Serologías ECLIA con índice -> texto
+// ==========================================
+function _numLab(v) {
+  const m = String(v).replace(",", ".").match(/-?\d+(\.\d+)?/);
+  return m ? parseFloat(m[0]) : NaN;
+}
+
+function normalizarValorLab(campo, valor) {
+  if (valor === null || valor === undefined || valor === "") return valor;
+  const v = String(valor).trim();
+  const vUp = v.toUpperCase().replace(/\s+/g, "");
+  const n = _numLab(v);
+
+  // Lípidos: el semáforo trabaja en mg/dl. Si viene en g/l (ej. 1,69 g/l) se pasa a mg/dl.
+  if (["colesterol_total", "colesterol_hdl", "colesterol_ldl", "trigliceridos"].includes(campo)) {
+    if (isNaN(n)) return v;
+    const enGL = vUp.includes("G/L") && !vUp.includes("MG");
+    const sinUnidadYChico = !vUp.includes("MG") && n < 10; // ningún lípido real en mg/dl es < 10
+    if (enGL || sinUnidadYChico) return `${Math.round(n * 100)} mg/dl`;
+    return v;
+  }
+
+  // Glucemia: el semáforo trabaja en g/l. Si viene en mg/dl (ej. 95 mg/dl) se pasa a g/l.
+  if (campo === "glucemia") {
+    if (isNaN(n)) return v;
+    if (vUp.includes("MG") || n > 10) return `${(n / 100).toFixed(2)} g/l`;
+    return v;
+  }
+
+  // Serologías por electroquimioluminiscencia informadas como índice (COI):
+  // < 0,90 no reactivo | 0,90-1,00 indeterminado | >= 1,00 reactivo.
+  // Solo HIV, HBsAg y HCV: en anti-core y Chagas los cortes son distintos.
+  if (["hiv", "hepatitis_b_antigeno_superficie", "hepatitis_c"].includes(campo)) {
+    if (/[A-Z]/i.test(v) || isNaN(n)) return v; // ya viene como texto
+    if (n < 0.9) return "NO REACTIVO";
+    if (n >= 1.0) return "REACTIVO";
+    return `INDETERMINADO (${v})`;
+  }
+
+  return v;
+}
+
+function normalizarValoresLab(valores) {
+  const out = {};
+  Object.entries(valores || {}).forEach(([campo, valor]) => {
+    out[campo] = normalizarValorLab(campo, valor);
+  });
+  return out;
+}
+
 function mostrarValoresExtraidos(data) {
   const resultadoDiv = document.getElementById("pdfResultado");
 
   const ETIQUETAS = ETIQUETAS_LAB;
   const MAPEO_PRACTICAS = MAPEO_PRACTICAS_LAB;
 
-  const valores = data.valores;
+  const valores = normalizarValoresLab(data.valores);
+  data.valores = valores;
   const valoresConDatos = Object.entries(valores).filter(([k, v]) => v);
 
   buscarDatosAfiliado(data.dni).then((datosAfiliado) => {
