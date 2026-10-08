@@ -197,6 +197,22 @@
         "Coordinacion DP": "coordinacion_dp",
       };
 
+      // Restricción de prestadores por sede y especialidad para el PV.
+      // Si la sede y la especialidad figuran acá, el PV SOLO ve los ids listados
+      // (lista vacía = no ve ninguno). Si no figuran, ve todos como siempre.
+      // Sede 2 = ATEM: sin laboratorio habilitado desde la baja de Mega (oct-2026).
+      // Cuando den de alta a RedLab, agregar su id: laboratorio: [<id RedLab>]
+      const PRESTADORES_HABILITADOS_POR_SEDE = {
+        2: { laboratorio: [] },
+      };
+
+      function prestadorPermitidoEnSede(idPrestador, especialidadReal) {
+        const reglasSede =
+          PRESTADORES_HABILITADOS_POR_SEDE[Number(window.dpIdSedeDp)];
+        if (!reglasSede || !(especialidadReal in reglasSede)) return true;
+        return reglasSede[especialidadReal].includes(Number(idPrestador));
+      }
+
       async function actualizarPrestadoresPrev() {
         const esp = document.getElementById("selectEspecialidadPrev").value;
         const select = document.getElementById("selectPrestadorPrev");
@@ -209,11 +225,13 @@
             `https://tablero-dia.onrender.com/api/prestadores-externos/${encodeURIComponent(especialidadReal)}`,
           );
           const data = await res.json();
-          const lista = data.data || [];
+          const lista = (data.data || []).filter((p) =>
+            prestadorPermitidoEnSede(p.id, especialidadReal),
+          );
 
           if (lista.length === 0) {
             select.innerHTML =
-              '<option value="">Sin prestadores cargados para esta especialidad</option>';
+              '<option value="">Sin prestadores habilitados para esta especialidad en tu sede</option>';
             window._prestadoresPrevActuales = [];
             return;
           }
@@ -240,7 +258,11 @@
 
         const lista = window._prestadoresPrevActuales || [];
         const prest = lista.find((p) => p.id.toString() === prestId);
-        if (!prest) return alert("Prestador no encontrado.");
+        if (
+          !prest ||
+          !prestadorPermitidoEnSede(prest.id, MAPA_ESPECIALIDAD_DB[esp] || esp)
+        )
+          return alert("Prestador no encontrado.");
 
         prestadorActual = {
           id: prest.id,
