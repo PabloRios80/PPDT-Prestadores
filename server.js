@@ -40,53 +40,85 @@ registrarEndpointDescargarPDFGenerico(
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
 
 // ── VERIFICAR AFILIADO IAPOS ──
-app.get("/verificar-afiliado/:dni", async (req, res) => {
-  const dni = req.params.dni;
+const iaposAgent = new https.Agent({ rejectUnauthorized: false });
+
+async function consultarPadronIapos(dni) {
   const hoy = new Date().toISOString().split("T")[0];
   const soapBody = `<?xml version="1.0" encoding="utf-8"?>
-    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-    <soap:Body>
-        <BEWsValidaAfi.Execute xmlns="IAPOS_WS">
-            <Usuario>CONSULTAPDP</Usuario>
-            <Passwd>1Qaz</Passwd>
-            <Nafiliado>${dni}</Nafiliado>
-            <Badocnumdo>${dni}</Badocnumdo>
-            <Tidocodigo_de_documento>96</Tidocodigo_de_documento>
-            <Ogorcodigo>1</Ogorcodigo>
-            <Fechpresta>${hoy}</Fechpresta>
-        </BEWsValidaAfi.Execute>
-    </soap:Body>
-    </soap:Envelope>`;
-  try {
-    const response = await axios.post(
-      "https://aswe.santafe.gov.ar/iapos-sw-srvt/servlet/abewsvalidaafi",
-      soapBody,
-      {
-        headers: {
-          "Content-Type": "text/xml; charset=utf-8",
-          SOAPAction: "IAPOS_WSaction/ABEWSVALIDAAFI.Execute",
-        },
-        timeout: 10000,
-        httpsAgent: agenteIapos,
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+<soap:Body>
+  <BEWsValidaAfi.Execute xmlns="IAPOS_WS">
+    <Usuario>CONSULTAPDP</Usuario>
+    <Passwd>1Qaz</Passwd>
+    <Nafiliado>${dni}</Nafiliado>
+    <Badocnumdo>${dni}</Badocnumdo>
+    <Tidocodigo_de_documento>96</Tidocodigo_de_documento>
+    <Ogorcodigo>1</Ogorcodigo>
+    <Fechpresta>${hoy}</Fechpresta>
+  </BEWsValidaAfi.Execute>
+</soap:Body>
+</soap:Envelope>`;
+
+  const response = await axios.post(
+    "https://aswe.santafe.gov.ar/iapos-sw-srvt/servlet/abewsvalidaafi",
+    soapBody,
+    {
+      headers: {
+        "Content-Type": "text/xml; charset=utf-8",
+        SOAPAction: "IAPOS_WSaction/ABEWSVALIDAAFI.Execute",
       },
-    );
-    const xml = response.data;
-    const get = (tag) => {
-      const m = xml.match(new RegExp(`<${tag}[^>]*>([^<]*)<\/${tag}>`));
-      return m ? m[1].trim() : null;
-    };
-    const estado = get("Estado");
-    res.json({
-      esActivo: estado === "A",
-      estado,
-      nombre: get("Apenom"),
-      edad: get("Edad"),
-      sexo: get("Sexo"),
-      localidad: get("Localidad"),
-      mensaje: get("Msgdsc"),
-    });
+      timeout: 6000,
+      httpsAgent: iaposAgent,
+    },
+  );
+
+  const xml = String(response.data || "");
+  const get = (tag) => {
+    const m = xml.match(new RegExp(`<${tag}[^>]*>([^<]*)</${tag}>`, "i"));
+    return m ? m[1].trim() : null;
+  };
+  const estado = get("Estado");
+  if (estado === null) {
+    console.error("⚠️ Padrón IAPOS respondió sin <Estado>. Cuerpo:", xml.slice(0, 1500));
+    throw new Error("Formato de respuesta IAPOS desconocido");
+  }
+  return {
+    esActivo: estado === "A",
+    estado,
+    nombre: get("Apenom"),
+    edad: get("Edad"),
+    sexo: get("Sexo"),
+    localidad: get("Localidad"),
+    mensaje: get("Msgdsc"),
+    fuente: "padron_iapos",
+  };
+}
+
+app.get("/verificar-afiliado/:dni", async (req, res) => {
+  const dni = String(req.params.dni || "").trim();
+  if (!dni) return res.status(400).json({ esActivo: false, error: "DNI vacío" });
+  try {
+    return res.json(await consultarPadronIapos(dni));
   } catch (e) {
-    res.status(500).json({ esActivo: false, error: e.message });
+    console.error(
+      `⚠️ Padrón IAPOS DNI ${dni}:`,
+      e.code || "",
+      e.response ? `HTTP ${e.response.status}` : "",
+      e.message,
+    );
+    // Padrón caído: no bloqueamos la carga
+    return res.json({
+      esActivo: true,
+      padronCaido: true,
+      estado: null,
+      nombre: null,
+      edad: null,
+      sexo: null,
+      localidad: null,
+      mensaje: "No se pudo verificar el padrón de IAPOS. Se permite continuar.",
+      error: e.message,
+      fuente: "sin_padron",
+    });
   }
 });
 
