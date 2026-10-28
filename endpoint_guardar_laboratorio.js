@@ -48,6 +48,43 @@ const MAPEO_COLUMNAS_HISTORICAS = {
   somf: "somf",
 };
 
+// Elige, entre las filas de practicas_autorizadas del paciente, la que
+// corresponde EXACTAMENTE a la práctica. Antes se buscaba con
+// ilike '%descripcion%': "creatinina" también encontraba
+// "RAC - Relación Albúmina/Creatinina" y "RAC - creatinina orina", y el
+// resultado de la creatinina terminaba guardado en la fila del RAC.
+// Regla: 1) descripción idéntica (sin importar mayúsculas/tildes/espacios);
+// 2) si no hay, una que la contenga, descartando las que agregan otra
+// práctica (RAC, orina, clearence) que la buscada no menciona, y
+// prefiriendo la descripción más corta.
+function normalizarDescripcion(t) {
+  return String(t || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+const PALABRAS_DE_OTRA_PRACTICA = ["rac", "orina", "clearence", "albumina"];
+function elegirFilaPractica(filas, descripcion) {
+  const buscada = normalizarDescripcion(descripcion);
+  if (!buscada || !filas || filas.length === 0) return null;
+  const exacta = filas.find(
+    (f) => normalizarDescripcion(f.descripcion_practica) === buscada,
+  );
+  if (exacta) return exacta;
+  const candidatas = filas
+    .filter((f) => {
+      const d = normalizarDescripcion(f.descripcion_practica);
+      if (!d.includes(buscada)) return false;
+      return !PALABRAS_DE_OTRA_PRACTICA.some(
+        (w) => new RegExp(`\\b${w}\\b`).test(d) && !new RegExp(`\\b${w}\\b`).test(buscada),
+      );
+    })
+    .sort((a, b) => a.descripcion_practica.length - b.descripcion_practica.length);
+  return candidatas[0] || null;
+}
+
 function registrarEndpointGuardarLaboratorio(app, supabase) {
   app.post("/savePracticasLaboratorio", async (req, res) => {
     try {
@@ -116,31 +153,32 @@ function registrarEndpointGuardarLaboratorio(app, supabase) {
       }
       const practicasUnicas = Object.values(practicasDedup);
 
+      // Todas las filas del paciente una sola vez; la elección de la fila
+      // correcta se hace con elegirFilaPractica (coincidencia exacta).
+      const { data: filasPaciente } = await supabase
+        .from("practicas_autorizadas")
+        .select("id, descripcion_practica, estado, fecha_carga")
+        .eq("dni", dni)
+        .in("estado", ["AUTORIZADA", "REALIZADA"]);
+      const filasRealizadas = (filasPaciente || []).filter((f) => f.estado === "REALIZADA");
+      const filasAutorizadas = (filasPaciente || []).filter((f) => f.estado === "AUTORIZADA");
+
       let guardadas = 0;
       let noAutorizadas = 0;
       for (const practica of practicasUnicas) {
-        // Verificar si ya fue cargada como REALIZADA
-        const { data: yaRealizada } = await supabase
-          .from("practicas_autorizadas")
-          .select("id, fecha_carga")
-          .eq("dni", dni)
-          .ilike("descripcion_practica", `%${practica.descripcion}%`)
-          .eq("estado", "REALIZADA");
+        // Verificar si ya fue cargada como REALIZADA (la MISMA práctica)
+        const yaRealizada = elegirFilaPractica(filasRealizadas, practica.descripcion);
 
-        if (yaRealizada && yaRealizada.length > 0) {
+        if (yaRealizada) {
           noAutorizadas++;
           continue;
         }
 
-        const { data: existentes } = await supabase
-          .from("practicas_autorizadas")
-          .select("id")
-          .eq("dni", dni)
-          .ilike("descripcion_practica", `%${practica.descripcion}%`)
-          .eq("estado", "AUTORIZADA");
-
-        const existente =
-          existentes && existentes.length > 0 ? existentes[0] : null;
+        const existente = elegirFilaPractica(filasAutorizadas, practica.descripcion);
+        // Que la misma fila no se use dos veces en esta carga
+        if (existente) {
+          filasAutorizadas.splice(filasAutorizadas.indexOf(existente), 1);
+        }
 
         if (existente) {
           await supabase

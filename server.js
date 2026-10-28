@@ -972,9 +972,23 @@ app.post("/savePracticeResult", async (req, res) => {
 
     // Actualizar practicas_historicas para prácticas de laboratorio
     const descLower = (descripcion || "").toLowerCase();
-    const columnaHistorica = Object.entries(MAPA_LAB_HISTORICAS).find(([key]) =>
-      descLower.includes(key),
-    )?.[1];
+    // Primero las prácticas cuyo nombre CONTIENE "creatinina" pero no son
+    // la creatinina en sangre (RAC, creatinina en orina, clearence): antes
+    // caían en "creatinina" por el orden del mapa y su resultado pisaba la
+    // columna creatinina de practicas_historicas.
+    const descSinTildes = descLower.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    let columnaHistorica = null;
+    if (descSinTildes.includes("creatinina orina")) {
+      columnaHistorica = "creatinina_orina_espontanea";
+    } else if (/^rac\b|relacion albumina|albumina\s*\/\s*creatinina/.test(descSinTildes)) {
+      columnaHistorica = "rac_albumina_creatinina";
+    } else if (descSinTildes.includes("clearence")) {
+      columnaHistorica = "clearence_creatinina";
+    } else {
+      columnaHistorica = Object.entries(MAPA_LAB_HISTORICAS).find(([key]) =>
+        descLower.includes(key),
+      )?.[1];
+    }
 
     if (columnaHistorica) {
       const hoy = new Date().toISOString().split("T")[0];
