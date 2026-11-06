@@ -182,7 +182,7 @@ async function buscarPracticas() {
             "bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700";
           btn.textContent = "CARGAR";
           btn.addEventListener("click", function () {
-            abrirModal(p.codigo_prestacion, p.descripcion_practica);
+            abrirModal(p.codigo_prestacion, p.descripcion_practica, p.id);
           });
 
           div.appendChild(info);
@@ -224,13 +224,31 @@ async function buscarPracticas() {
             derecha.appendChild(btnVer);
           }
 
+          // Realizada sin informe (p. ej. marcada desde SIOS): se puede subir
+          // el informe sin cambiar el estado ni volver a facturarla.
+          const sinInforme =
+            !p.enlace_pdf && !(p.resultado_texto || "").trim();
+          if (sinInforme) {
+            const btnInforme = document.createElement("button");
+            btnInforme.className =
+              "bg-amber-500 text-white px-3 py-1 rounded-full text-sm font-bold hover:bg-amber-600";
+            btnInforme.style.backgroundColor = "#f59e0b";
+            btnInforme.innerHTML = '<i class="fas fa-upload mr-1"></i> Subir informe';
+            btnInforme.title = "Esta práctica figura realizada pero no tiene el informe cargado";
+            btnInforme.addEventListener("click", function () {
+              abrirModal(p.codigo_prestacion, p.descripcion_practica, p.id, true);
+            });
+            derecha.appendChild(btnInforme);
+          }
+
           const badge = document.createElement("span");
           badge.className =
             "bg-green-100 text-green-700 px-3 py-1 rounded-full text-sm font-bold";
-          badge.innerHTML = "✓ REALIZADA";
+          badge.innerHTML = sinInforme ? "✓ REALIZADA (sin informe)" : "✓ REALIZADA";
           derecha.appendChild(badge);
 
           const btnEliminar = document.createElement("button");
+          if (p.cargado_sios) btnEliminar.style.display = "none"; // facturada en SIOS: no se elimina
           btnEliminar.className =
             "bg-red-100 text-red-700 px-3 py-1 rounded-full text-sm font-bold hover:bg-red-200";
           btnEliminar.innerHTML = '<i class="fas fa-trash mr-1"></i>Eliminar';
@@ -396,8 +414,8 @@ async function guardarExtraccionBio(dni) {
 // ==========================================
 // MODAL CARGA INDIVIDUAL
 // ==========================================
-function abrirModal(codigo, descripcion) {
-  practicaActual = { codigo, descripcion };
+function abrirModal(codigo, descripcion, idPractica = null, completarInforme = false) {
+  practicaActual = { codigo, descripcion, id: idPractica, completarInforme };
   document.getElementById("modalTitulo").textContent = descripcion;
   document.getElementById("resultadoValor").value = "";
   document.getElementById("archivoPdf").value = "";
@@ -476,8 +494,9 @@ async function guardarPractica() {
     );
   }
 
-  // Verificar si ya fue cargada
-  try {
+  // Verificar si ya fue cargada (no aplica al completar el informe de una
+  // práctica ya realizada: ahí se sabe que está cargada y se busca el informe)
+  if (!practicaActual.completarInforme) try {
     const resCheck = await fetch("/verificarPracticasDuplicadas", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -533,9 +552,11 @@ async function guardarPractica() {
     archivoNombre: `Resultado_${dni}_${practicaActual.descripcion}.pdf`,
     idPrestador: prestadorActual.id,
     nombrePrestador: prestadorActual.nombre,
+    idPractica: practicaActual.id || null,
+    completarInforme: !!practicaActual.completarInforme,
   };
   // Verificar si ya fue cargada
-  try {
+  if (!practicaActual.completarInforme) try {
     const resCheck = await fetch("/verificarPracticasDuplicadas", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

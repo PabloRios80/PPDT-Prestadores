@@ -670,6 +670,7 @@ app.post("/savePracticeResult", async (req, res) => {
     idPrestador,
     nombrePrestador,
     idPractica, // id de la fila en la que el prestador tocó "CARGAR" (opcional)
+    completarInforme, // true = subir el informe a una práctica YA realizada que no lo tiene
   } = req.body;
 
   // Código de prestación oficial por descripción — el algoritmo que crea
@@ -839,17 +840,36 @@ app.post("/savePracticeResult", async (req, res) => {
     //   2) si no, la AUTORIZADA más antigua con esa descripción exacta,
     //      prefiriendo la que tiene código.
     let existente = null;
+    // Práctica ya REALIZADA (p. ej. marcada por la importación de SIOS) que
+    // todavía no tiene informe: se completa solo el informe, sin tocar el
+    // estado, el código, la sede ni la marca de SIOS (no se factura de nuevo).
+    let filaACompletar = null;
     if (idPractica) {
       const { data: filaElegida } = await supabase
         .from("practicas_autorizadas")
-        .select("id, dni, estado")
+        .select("id, dni, estado, enlace_pdf, resultado_texto, fecha_carga")
         .eq("id", idPractica)
         .maybeSingle();
       if (filaElegida && filaElegida.dni === dni && filaElegida.estado === "AUTORIZADA") {
         existente = filaElegida;
+      } else if (
+        completarInforme &&
+        filaElegida &&
+        filaElegida.dni === dni &&
+        filaElegida.estado === "REALIZADA" &&
+        !filaElegida.enlace_pdf &&
+        !(filaElegida.resultado_texto || "").trim()
+      ) {
+        filaACompletar = filaElegida;
       }
     }
-    if (!existente) {
+    if (completarInforme && !filaACompletar) {
+      return res.status(409).json({
+        success: false,
+        message: "Esta práctica ya tiene un informe cargado o no corresponde a este paciente.",
+      });
+    }
+    if (!existente && !filaACompletar) {
       const { data: autorizadas } = await supabase
         .from("practicas_autorizadas")
         .select("id, codigo_prestacion, fecha_autorizacion")
@@ -868,7 +888,7 @@ app.post("/savePracticeResult", async (req, res) => {
     // verifica que no esté ya cargada la misma práctica para el mismo
     // paciente en los últimos 60 días (doble clic, recarga de página,
     // "Eliminar" + volver a cargar).
-    if (!existente) {
+    if (!existente && !filaACompletar) {
       const hace60 = new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString();
       const { data: yaCargadas } = await supabase
         .from("practicas_autorizadas")
@@ -914,7 +934,18 @@ app.post("/savePracticeResult", async (req, res) => {
       .maybeSingle();
     const idSedeReal = admisionReciente?.id_sede_dp || null;
 
-    if (existente) {
+    if (filaACompletar) {
+      await supabase
+        .from("practicas_autorizadas")
+        .update({
+          resultado_texto: resultadoValor,
+          enlace_pdf: enlacePdf,
+          fecha_carga: filaACompletar.fecha_carga || new Date().toISOString(),
+          id_prestador: idPrestador?.toString(),
+          nombre_prestador: nombrePrestador,
+        })
+        .eq("id", filaACompletar.id);
+    } else if (existente) {
       await supabase
         .from("practicas_autorizadas")
         .update({
