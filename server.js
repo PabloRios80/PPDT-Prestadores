@@ -155,6 +155,28 @@ app.post("/loginPrestador", async (req, res) => {
   }
 });
 
+// ── Categoría de prestador por código de prestación (tabla categorias_prestacion) ──
+// Cache de 10 minutos: la tabla cambia muy de vez en cuando.
+let _cacheCategorias = { mapa: new Map(), vence: 0 };
+async function obtenerCategoriasPorCodigo() {
+  if (Date.now() < _cacheCategorias.vence) return _cacheCategorias.mapa;
+  const { data, error } = await supabase
+    .from("categorias_prestacion")
+    .select("codigo_prestacion, categoria");
+  if (error) {
+    console.error("No se pudo leer categorias_prestacion:", error.message);
+    return _cacheCategorias.mapa; // se sigue con lo último que había (o vacío = palabras clave)
+  }
+  const mapa = new Map();
+  (data || []).forEach(({ codigo_prestacion, categoria }) => {
+    const cod = String(codigo_prestacion || "").trim().replace(/^0+/, "");
+    if (!mapa.has(cod)) mapa.set(cod, []);
+    mapa.get(cod).push(categoria);
+  });
+  _cacheCategorias = { mapa, vence: Date.now() + 10 * 60 * 1000 };
+  return mapa;
+}
+
 // ── OBTENER PRÁCTICAS POR ESPECIALIDAD ──
 app.get("/getPracticasPrestador/:dni/:especialidad", async (req, res) => {
   const { dni, especialidad } = req.params;
@@ -217,45 +239,69 @@ app.get("/getPracticasPrestador/:dni/:especialidad", async (req, res) => {
   };
 
   try {
-    let keywords = [];
     const claveNormalizada = ALIAS_ESPECIALIDAD[especialidad] || especialidad;
 
-    // Algunas especialidades del login agrupan varias categorías finas de
-    // prestador_practicas (ej. "Diagnóstico por Imágenes" cubre mamografía,
-    // ecografía abdominal, ecografía mamaria y densitometría a la vez) —
-    // mismo agrupamiento que ya usa tablero-dia para el desplegable de
-    // prestadores, para no dejar afuera nada de lo que el PV vino a cargar.
-    const CATEGORIAS_AGRUPADAS = {
-      imagenes: ["mamografia", "ecografia_abdominal", "ecografia_mamaria", "densitometria"],
+    // ── Qué categorías puede ver este prestador ──
+    // Categorías "paraguas": un prestador que tiene asignada la categoría
+    // genérica (p. ej. CIMBI o Scanner con "imagenes") cubre todas las finas.
+    const PARAGUAS = {
+      imagenes: ["mamografia", "ecografia_mamaria", "ecografia_abdominal"],
+      gastro: ["vcc"],
+      vcc: ["gastro"],
     };
-    const categoriasBuscadas =
-      CATEGORIAS_AGRUPADAS[claveNormalizada] || [claveNormalizada];
+    const expandir = (cats) => {
+      const out = new Set();
+      cats.forEach((c) => {
+        out.add(c);
+        (PARAGUAS[c] || []).forEach((x) => out.add(x));
+      });
+      return out;
+    };
 
+    // Lo que abarca la especialidad elegida al entrar (Diagnóstico por
+    // Imágenes incluye densitometría, mismo agrupamiento que tablero-dia).
+    const ALCANCE_ESPECIALIDAD = {
+      imagenes: ["imagenes", "mamografia", "ecografia_mamaria", "ecografia_abdominal", "densitometria"],
+    };
+    const alcance = expandir(ALCANCE_ESPECIALIDAD[claveNormalizada] || [claveNormalizada]);
+
+    // Prestador real: lo que tiene asignado en prestador_practicas, dentro
+    // del alcance de la especialidad elegida (un prestador con muchas
+    // categorías, como Hospital Italiano o Delta, no ve de más).
+    let permitidas = new Set();
     if (id_prestador) {
-      // Prestador real: solo la(s) categoría(s) que corresponden a la
-      // especialidad elegida al loguearse, no todas las que tenga asignadas
-      // el prestador en total — un prestador con varias categorías (como
-      // Hospital Italiano Rosario, con 9) mostraba de más si no se filtraba.
       const { data: asignadas } = await supabase
         .from("prestador_practicas")
         .select("practica")
         .eq("id_prestador", id_prestador);
-
-      const practicasAsignadas = (asignadas || []).map((a) => a.practica);
-      const practicasFiltradas = practicasAsignadas.filter((p) =>
-        categoriasBuscadas.includes(p),
-      );
-      practicasFiltradas.forEach((p) => {
-        keywords = keywords.concat(KEYWORDS_POR_CATEGORIA[p] || []);
+      expandir((asignadas || []).map((a) => a.practica)).forEach((c) => {
+        if (alcance.has(c)) permitidas.add(c);
       });
     }
-
-    // Respaldo: si no vino id_prestador, o el prestador no tiene asignada
-    // justo la categoría elegida (desajuste de datos), usar el
-    // comportamiento anterior por especialidad (compatibilidad).
-    if (keywords.length === 0) {
-      keywords = KEYWORDS_POR_CATEGORIA[claveNormalizada] || [];
+    // Respaldo (sin id_prestador o sin categorías cargadas para esta
+    // especialidad): la especialidad sola, como antes.
+    if (permitidas.size === 0) {
+      permitidas = expandir([claveNormalizada]);
     }
+
+    // ── Cómo se reconoce cada práctica ──
+    // 1) Por CÓDIGO de prestación, con la tabla categorias_prestacion
+    //    (sirve igual para las filas del algoritmo y las importadas de
+    //    SIOS, que vienen con otra descripción: "PPDTE - ECOGRAFÍA
+    //    MAMARIA...", "SENOGRAFIA AMPLIADA..."). Prácticas nuevas = filas
+    //    nuevas en esa tabla, sin tocar este código.
+    // 2) Si la fila no tiene código o el código no está en la tabla, por
+    //    palabra clave en la descripción (sin tildes), como antes.
+    const mapaCodigos = await obtenerCategoriasPorCodigo();
+    const normCodigo = (c) => String(c || "").trim().replace(/^0+/, "");
+    const sinTildes = (t) =>
+      (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+    let keywords = [];
+    permitidas.forEach((c) => {
+      keywords = keywords.concat(KEYWORDS_POR_CATEGORIA[c] || []);
+    });
+    const keywordsNorm = keywords.map(sinTildes);
 
     // Si no hay prácticas autorizadas, generarlas automáticamente
     const { data: existing } = await supabase
@@ -276,17 +322,12 @@ app.get("/getPracticasPrestador/:dni/:especialidad", async (req, res) => {
 
     if (error) throw error;
 
-    // Filtro por palabra clave del lado del servidor — antes se armaba
-    // un .or() gigante con una condición por palabra clave, que con
-    // prestadores de varias categorías (como Delta, con 9) superaba
-    // fácil las 25-30 condiciones encadenadas y podía romperse o
-    // devolver resultados inconsistentes. Acá el paciente típico tiene
-    // unas pocas decenas de filas como mucho, así que filtrar en JS
-    // sale gratis y no tiene límite de largo.
-    const keywordsLower = keywords.map((k) => k.toLowerCase());
+    // Filtro en JS (el paciente típico tiene pocas decenas de filas).
     const data = (todasLasPracticas || []).filter((p) => {
-      const desc = (p.descripcion_practica || "").toLowerCase();
-      return keywordsLower.some((k) => desc.includes(k));
+      const cats = mapaCodigos.get(normCodigo(p.codigo_prestacion));
+      if (cats) return cats.some((c) => permitidas.has(c));
+      const desc = sinTildes(p.descripcion_practica);
+      return keywordsNorm.some((k) => desc.includes(k));
     });
 
     const { data: afiliado } = await supabase
