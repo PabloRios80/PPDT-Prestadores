@@ -6,3 +6,6 @@ node_modules/
 npm-debug.log*
 .DS_Store
 Thumbs.db
+anticore_pdfs/
+*.zip
+*.pdf

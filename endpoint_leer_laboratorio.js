@@ -55,6 +55,8 @@ const PROMPT_LABORATORIO = `Esto es un informe de laboratorio médico (puede ten
   "hiv": "NEGATIVO o POSITIVO o NO REACTIVO o REACTIVO (en mayúsculas) o null",
   "hepatitis_b_antigeno_superficie": "estado en mayúsculas o null",
   "hepatitis_b_anti_core": "estado en mayúsculas o null",
+  "hepatitis_b_anti_core_valor": "SOLO el número del VALOR HALLADO del anti-core (ej: 2,30) si el informe lo da como número, o null",
+  "hepatitis_b_anti_core_referencia": "el texto de valores de referencia impreso junto al anti-core, copiado tal cual (ej: Mayor a 1.00: No Reactivo / Menor o igual a 1.00: Reactivo), o null",
   "hepatitis_c": "estado en mayúsculas o null",
   "vdrl": "estado en mayúsculas o null",
   "sifilis_treponemica": "estado en mayúsculas (POSITIVO/NEGATIVO/REACTIVO/NO REACTIVO) o null — SOLO para prueba treponémica (ECLIA, TPHA, FTA-ABS). Es distinta del VDRL que es no treponémica.",
@@ -86,6 +88,8 @@ Los tres campos son distintos y deben completarse por separado.
 
 Para el filtrado glomerular: si el informe dice "109,00 ml/min/1,73 m2", devolvé solo "109,00 ml/min" (quitando la parte de superficie corporal /1,73 m2).
 
+IMPORTANTE sobre Hepatitis B ANTI-CORE (anti-HBc): en electroquimioluminiscencia la escala es INVERSA a las demás serologías: un valor MAYOR a 1,00 es NO REACTIVO y un valor MENOR O IGUAL a 1,00 es REACTIVO. Guiate siempre por la referencia impresa en el informe y devolvé además el número en "hepatitis_b_anti_core_valor".
+
 Todos los estados (NEGATIVO, REACTIVO, DETECTABLE, etc.) deben ir en MAYÚSCULAS, sin importar cómo aparezcan en el documento original.
 
 Si un valor no aparece en el informe, poné null. Sé preciso con los números y unidades exactamente como aparecen en el documento (excepto las normalizaciones indicadas arriba).`;
@@ -102,8 +106,15 @@ async function pdfABase64Imagenes(buffer) {
   }).promise;
 
   const imagenes = [];
+  let texto = "";
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
+    try {
+      const tc = await page.getTextContent();
+      texto += tc.items.map((x) => x.str).join(" ") + "\n";
+    } catch (e) {
+      /* PDF escaneado o sin capa de texto: seguimos solo con la imagen */
+    }
     const viewport = page.getViewport({ scale: 2.0 });
 
     const canvasAndContext = canvasFactory.create(
@@ -124,12 +135,12 @@ async function pdfABase64Imagenes(buffer) {
 
     canvasFactory.destroy(canvasAndContext);
   }
-  return imagenes;
+  return { imagenes, texto };
 }
 
 // Envía las imágenes a Claude y devuelve el JSON de valores extraídos
 async function leerValoresLaboratorioConClaude(buffer) {
-  const imagenes = await pdfABase64Imagenes(buffer);
+  const { imagenes, texto } = await pdfABase64Imagenes(buffer);
 
   const content = [{ type: "text", text: PROMPT_LABORATORIO }];
   for (const img of imagenes) {
@@ -154,7 +165,86 @@ async function leerValoresLaboratorioConClaude(buffer) {
     .replace(/```\s*$/, "")
     .trim();
 
-  return JSON.parse(jsonLimpio);
+  const valores = JSON.parse(jsonLimpio);
+  return corregirSerologiasECLIA(valores, texto);
+}
+
+// ==========================================
+// CORRECCIÓN DETERMINÍSTICA DE SEROLOGÍAS ECLIA (sin IA)
+// ==========================================
+// Motivo (nov-2026): la IA invertía el anti-core de RedLab (ATEM). En ECLIA el
+// anti-HBc es una prueba competitiva: COI > 1,00 = NO REACTIVO, COI <= 1,00 =
+// REACTIVO. Las otras serologías (HIV, HBsAg, HCV) usan la escala directa.
+// Si el PDF tiene texto, se lee el valor y la referencia impresa y se decide
+// por código, pisando lo que diga la IA. Si el PDF es escaneado (sin texto),
+// se usa el número que devolvió la IA para el anti-core.
+function _normTexto(t) {
+  return String(t || "")
+    .replace(/\s+/g, " ")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+}
+function _num(s) {
+  return parseFloat(String(s).replace(",", "."));
+}
+function _leerBloqueECLIA(t, regexTitulo) {
+  const m = t.match(regexTitulo);
+  if (!m) return null;
+  const resto = t.slice(m.index, m.index + 600);
+  const v = resto.match(/VALOR HALLADO:[.\s]*([0-9]+[.,]?[0-9]*)/);
+  if (!v) return null;
+  const valor = _num(v[1]);
+  if (isNaN(valor)) return null;
+  const inversa =
+    /MAYOR (A|DE) 1[.,]0+ ?: ?NO REACTIVO/.test(resto) ||
+    /MENOR O IGUAL (A|DE) 1[.,]0+ ?: ?REACTIVO/.test(resto);
+  const directa =
+    /MENOR A 0[.,]90 ?: ?NO REACTIVO/.test(resto) ||
+    /MAYOR O IGUAL A 1[.,]0+ ?: ?REACTIVO/.test(resto);
+  if (inversa) return valor > 1 ? "NO REACTIVO" : "REACTIVO";
+  if (directa) return valor < 0.9 ? "NO REACTIVO" : valor >= 1 ? "REACTIVO" : "INDETERMINADO";
+  return null;
+}
+function corregirSerologiasECLIA(valores, texto) {
+  const v = valores || {};
+  const t = _normTexto(texto);
+  const correcciones = {};
+  if (t.length > 100) {
+    const leidos = {
+      hepatitis_b_anti_core: _leerBloqueECLIA(t, /ANTI ?-?CORE|ANTI ?-?HBC/),
+      hiv: _leerBloqueECLIA(t, /\bHIV\b/),
+      hepatitis_b_antigeno_superficie: _leerBloqueECLIA(t, /ANTIGENO DE SUPERFICIE|HBS ?AG/),
+      hepatitis_c: _leerBloqueECLIA(t, /HEPATITIS C AC/),
+    };
+    for (const [campo, res] of Object.entries(leidos)) {
+      if (res && v[campo] !== res) {
+        correcciones[campo] = { ia: v[campo], pdf: res };
+        v[campo] = res;
+      }
+    }
+  }
+  // PDF escaneado: si la IA dio el número del anti-core y la referencia impresa
+  // indica escala inversa, la decisión la toma el código (no la IA)
+  const refInversa = /MAYOR (A|DE) 1[.,]0+ ?:? ?NO REACTIVO|MENOR O IGUAL (A|DE) 1[.,]0+ ?:? ?REACTIVO/.test(
+    _normTexto(v.hepatitis_b_anti_core_referencia),
+  );
+  if (!correcciones.hepatitis_b_anti_core && refInversa && v.hepatitis_b_anti_core_valor != null) {
+    const n = _num(v.hepatitis_b_anti_core_valor);
+    if (!isNaN(n)) {
+      const res = n > 1 ? "NO REACTIVO" : "REACTIVO";
+      if (v.hepatitis_b_anti_core !== res) {
+        correcciones.hepatitis_b_anti_core = { ia: v.hepatitis_b_anti_core, valor: n, aplicado: res };
+        v.hepatitis_b_anti_core = res;
+      }
+    }
+  }
+  delete v.hepatitis_b_anti_core_valor;
+  delete v.hepatitis_b_anti_core_referencia;
+  if (Object.keys(correcciones).length) {
+    console.log("🔧 Serologías corregidas por lectura del PDF:", JSON.stringify(correcciones));
+  }
+  return v;
 }
 
 // ── ENDPOINT: Leer PDF de laboratorio y extraer valores con IA ──
@@ -281,6 +371,7 @@ async function descargarPDFDeDrive(fileId) {
 
 module.exports = {
   registrarEndpointLeerLaboratorio,
+  corregirSerologiasECLIA,
   leerValoresLaboratorioConClaude,
   extraerIdDeDriveLink,
   descargarPDFDeDrive,
