@@ -191,9 +191,14 @@ function _num(s) {
 function _leerBloqueECLIA(t, regexTitulo) {
   const m = t.match(regexTitulo);
   if (!m) return null;
-  const resto = t.slice(m.index, m.index + 600);
+  let resto = t.slice(m.index, m.index + 600);
   const v = resto.match(/VALOR HALLADO:[.\s]*([0-9]+[.,]?[0-9]*)/);
   if (!v) return null;
+  // El bloque termina donde empieza la práctica siguiente ("METODO:" posterior al valor).
+  // Sin este corte, la referencia de la práctica de abajo (p.ej. la escala inversa del
+  // anti-core) se mezcla con la de esta práctica y la invierte.
+  const fin = resto.indexOf("METODO:", v.index + v[0].length);
+  if (fin > 0) resto = resto.slice(0, fin);
   const valor = _num(v[1]);
   if (isNaN(valor)) return null;
   const inversa =
