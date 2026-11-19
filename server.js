@@ -802,16 +802,35 @@ app.post("/savePracticeResult", async (req, res) => {
     let enlacePdf = null;
     if (archivoBase64) {
       const buffer = Buffer.from(archivoBase64, "base64");
-      const fileName = `${dni}/${Date.now()}_${archivoNombre}`;
+      // Supabase Storage rechaza claves con tildes/ñ/caracteres especiales
+      // (ej. "PPDTE - ECOGRAFÍA MAMARIA..." venida de SIOS). Se normaliza
+      // el nombre para que funcione con cualquier descripción de práctica.
+      const nombreSeguro =
+        String(archivoNombre || "informe.pdf")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^A-Za-z0-9._-]+/g, "_")
+          .replace(/_+/g, "_")
+          .replace(/^_|_$/g, "")
+          .slice(0, 150) || "informe.pdf";
+      const fileName = `${String(dni).replace(/\D/g, "")}/${Date.now()}_${nombreSeguro}`;
       const { error: uploadError } = await supabase.storage
         .from("resultados-practicas")
         .upload(fileName, buffer, { contentType: "application/pdf" });
-      if (!uploadError) {
-        const { data: urlData } = supabase.storage
-          .from("resultados-practicas")
-          .getPublicUrl(fileName);
-        enlacePdf = urlData.publicUrl;
+      if (uploadError) {
+        // Antes el error se ignoraba y la práctica quedaba REALIZADA sin
+        // informe mientras al prestador se le decía "subido".
+        console.error("Error subiendo PDF a Storage:", fileName, uploadError);
+        return res.status(500).json({
+          success: false,
+          message:
+            "No se pudo guardar el PDF del informe. La práctica NO fue modificada. Intente nuevamente o avise a Coordinación.",
+        });
       }
+      const { data: urlData } = supabase.storage
+        .from("resultados-practicas")
+        .getPublicUrl(fileName);
+      enlacePdf = urlData.publicUrl;
     }
 
     const descLowerParaSomf = (descripcion || "").toLowerCase();
