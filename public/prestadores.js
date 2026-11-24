@@ -886,6 +886,18 @@ function evaluarSemaforo(campo, valor, datosAfiliado) {
     if (vNum < 6.5) return AMARILLO;
     return ROJO;
   }
+  // Lectura dudosa marcada por el servidor: hay que mirarla en el PDF
+  if (vUpper.includes("VERIFICAR")) {
+    return { color: "#d97706", bg: "#fef3c7", icono: "🟡", texto: "Verificar en PDF" };
+  }
+  // VDRL informada con diluciones ("R 32 DILS", "REACTIVO SUERO PURO"): es reactiva
+  if (
+    campo === "vdrl" &&
+    !vUpper.includes("NO REACTIVO") &&
+    (/^R\s*\d/.test(vUpper) || vUpper.includes("DIL") || vUpper.includes("REACTIVO"))
+  ) {
+    return ROJO;
+  }
   if (
     [
       "hiv",
@@ -1222,7 +1234,7 @@ async function procesarTodosLosInformes() {
     return;
   }
 
-  mostrarValoresExtraidos({ dni, nombre: "", apellido: "", valores: valoresCombinados });
+  mostrarValoresExtraidos({ dni, nombre: "", apellido: "", valores: valoresCombinados, origen: "ia" });
 }
 
 // ==========================================
@@ -1318,7 +1330,7 @@ function mostrarFormularioManualLab(dni, valoresPrevios, fallidos) {
     }
     resultadoDiv.style.maxHeight = "";
     // Desde acá sigue el circuito normal: semáforo → confirmar → guardar
-    mostrarValoresExtraidos({ dni, nombre: "", apellido: "", valores });
+    mostrarValoresExtraidos({ dni, nombre: "", apellido: "", valores, origen: "manual" });
   });
 }
 
@@ -1426,7 +1438,36 @@ function mostrarValoresExtraidos(data) {
         </div>`;
     };
 
+    // ── Aviso obligatorio: el informe oficial es el PDF firmado ──
+    const leidoPorIA = data.origen === "ia";
+    const archivosPDF = window._archivosPDFLab || [];
+    const aVerificar = valoresConDatos.filter(([, v]) =>
+      String(v).toUpperCase().includes("VERIFICAR"),
+    );
+    const botonesPDF = archivosPDF
+      .map(
+        (a, i) => `
+          <button type="button" data-ver-pdf-lab="${i}"
+            style="background:white;color:#b91c1c;border:1px solid #b91c1c;padding:6px 12px;border-radius:6px;font-weight:bold;font-size:0.8rem;cursor:pointer;margin:4px 4px 0 0;">
+            📄 Abrir PDF${archivosPDF.length > 1 ? ` ${i + 1}` : ""} (${a.nombre})
+          </button>`,
+      )
+      .join("");
+
     let html = `
+      <div style="background:#fff7ed;border:2px solid #ea580c;border-radius:8px;padding:12px;margin-bottom:12px;">
+        <p style="font-weight:bold;color:#9a3412;margin-bottom:6px;">
+          ${leidoPorIA
+            ? "🤖 Estos valores los leyó automáticamente la IA y pueden tener errores."
+            : "✍️ Estos valores se cargaron a mano."}
+        </p>
+        <p style="color:#7c2d12;font-size:0.85rem;">
+          <strong>El informe oficial es el PDF firmado por el bioquímico responsable.</strong>
+          Antes de confirmar, abrí el PDF y compará <strong>cada valor uno por uno</strong>.
+          Si alguno no coincide, tocá <strong>"Corregir valores"</strong>.
+        </p>
+        <div style="margin-top:6px;">${botonesPDF || '<span style="color:#b91c1c;font-size:0.8rem;font-weight:bold;">⚠️ No hay PDF adjunto.</span>'}</div>
+      </div>
       <div class="border-t pt-3">
         <p class="font-bold text-gray-700 mb-3">
           Se encontraron <strong>${valoresConDatos.length}</strong> resultados.
@@ -1460,6 +1501,35 @@ function mostrarValoresExtraidos(data) {
 
     window._datosPDFLab = { data, mapeo: MAPEO_PRACTICAS };
 
+    // Bloqueo: valores marcados para verificar no se pueden guardar así
+    if (aVerificar.length > 0) {
+      html += `
+        <div style="background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:12px;margin-top:12px;">
+          <p style="color:#92400e;font-weight:bold;margin-bottom:4px;">
+            🟡 Hay ${aVerificar.length} resultado/s que el sistema no pudo leer con seguridad:
+            ${aVerificar.map(([c]) => ETIQUETAS[c] || c).join(", ")}.
+          </p>
+          <p style="color:#92400e;font-size:0.85rem;">
+            Tocá "Corregir valores" y escribí el resultado tal como figura en el PDF (por ejemplo <strong>R 32 DILS</strong>).
+          </p>
+        </div>`;
+    }
+
+    // Confirmación obligatoria de que se comparó con el PDF
+    html += `
+      <label style="display:flex;gap:8px;align-items:flex-start;background:#f3f4f6;border:1px solid #9ca3af;border-radius:8px;padding:10px;margin-top:12px;cursor:pointer;">
+        <input type="checkbox" id="chkComparoPDFLab" style="margin-top:3px;width:18px;height:18px;" ${aVerificar.length > 0 ? "disabled" : ""}>
+        <span style="font-size:0.85rem;color:#111827;">
+          <strong>Comparé cada valor con el PDF original firmado</strong> y coinciden.
+        </span>
+      </label>
+      <div style="text-align:center;margin-top:8px;">
+        <button type="button" id="btnCorregirValoresLab"
+          style="background:white;color:#1d4ed8;border:1px solid #1d4ed8;padding:6px 16px;border-radius:8px;font-weight:bold;cursor:pointer;">
+          ✏️ Corregir valores
+        </button>
+      </div>`;
+
     if (hayRojos) {
       html += `
         <div style="background:#fee2e2;border:1px solid #dc2626;border-radius:8px;padding:12px;margin-top:12px;text-align:center;">
@@ -1485,7 +1555,37 @@ function mostrarValoresExtraidos(data) {
     resultadoDiv.classList.remove("hidden");
     resultadoDiv.innerHTML = html;
 
-    document.getElementById("btnConfirmarPDF").addEventListener("click", () => {
+    // Abrir cada PDF en otra pestaña
+    resultadoDiv.querySelectorAll("[data-ver-pdf-lab]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const a = archivosPDF[Number(btn.dataset.verPdfLab)];
+        if (!a || !a.base64) return;
+        const bin = atob(String(a.base64).replace(/^data:[^,]*,/, ""));
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+        window.open(url, "_blank");
+      });
+    });
+
+    document.getElementById("btnCorregirValoresLab").addEventListener("click", () => {
+      mostrarFormularioManualLab(data.dni, { ...valores }, []);
+    });
+
+    // El botón de guardar queda bloqueado hasta tildar la confirmación
+    const btnConfirmar = document.getElementById("btnConfirmarPDF");
+    const chk = document.getElementById("chkComparoPDFLab");
+    const actualizarBoton = () => {
+      const habilitado = chk.checked && aVerificar.length === 0;
+      btnConfirmar.disabled = !habilitado;
+      btnConfirmar.style.opacity = habilitado ? "1" : "0.45";
+      btnConfirmar.style.cursor = habilitado ? "pointer" : "not-allowed";
+    };
+    chk.addEventListener("change", actualizarBoton);
+    actualizarBoton();
+
+    btnConfirmar.addEventListener("click", () => {
+      if (!chk.checked || aVerificar.length > 0) return;
       confirmarCargaPDFLab(window._datosPDFLab.data, window._datosPDFLab.mapeo);
     });
   });

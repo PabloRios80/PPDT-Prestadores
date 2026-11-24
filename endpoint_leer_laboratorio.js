@@ -58,7 +58,7 @@ const PROMPT_LABORATORIO = `Esto es un informe de laboratorio médico (puede ten
   "hepatitis_b_anti_core_valor": "SOLO el número del VALOR HALLADO del anti-core (ej: 2,30) si el informe lo da como número, o null",
   "hepatitis_b_anti_core_referencia": "el texto de valores de referencia impreso junto al anti-core, copiado tal cual (ej: Mayor a 1.00: No Reactivo / Menor o igual a 1.00: Reactivo), o null",
   "hepatitis_c": "estado en mayúsculas o null",
-  "vdrl": "estado en mayúsculas o null",
+  "vdrl": "el resultado de la VDRL COPIADO TAL CUAL figura en el informe (ej: R 32 DILS, REACTIVO SUERO PURO, NO REACTIVO, NEGATIVO) o null",
   "sifilis_treponemica": "estado en mayúsculas (POSITIVO/NEGATIVO/REACTIVO/NO REACTIVO) o null — SOLO para prueba treponémica (ECLIA, TPHA, FTA-ABS). Es distinta del VDRL que es no treponémica.",
   "chagas_hai": "estado en mayúsculas o null",
   "chagas_eclia": "estado en mayúsculas o null",
@@ -89,6 +89,8 @@ Los tres campos son distintos y deben completarse por separado.
 Para el filtrado glomerular: si el informe dice "109,00 ml/min/1,73 m2", devolvé solo "109,00 ml/min" (quitando la parte de superficie corporal /1,73 m2).
 
 IMPORTANTE sobre Hepatitis B ANTI-CORE (anti-HBc): en electroquimioluminiscencia la escala es INVERSA a las demás serologías: un valor MAYOR a 1,00 es NO REACTIVO y un valor MENOR O IGUAL a 1,00 es REACTIVO. Guiate siempre por la referencia impresa en el informe y devolvé además el número en "hepatitis_b_anti_core_valor".
+
+IMPORTANTE sobre VDRL: copiá el resultado EXACTAMENTE como está impreso en el renglón de la VDRL. En estos informes "R 32 DILS" significa REACTIVO hasta 32 diluciones: es un resultado POSITIVO, nunca lo conviertas en NEGATIVO. No completes la VDRL por analogía con los renglones de arriba (que suelen decir NEGATIVO): leé su propio renglón. Si hay prueba treponémica, va aparte en "sifilis_treponemica".
 
 Todos los estados (NEGATIVO, REACTIVO, DETECTABLE, etc.) deben ir en MAYÚSCULAS, sin importar cómo aparezcan en el documento original.
 
@@ -244,6 +246,25 @@ function corregirSerologiasECLIA(valores, texto) {
       }
     }
   }
+  // ── VDRL (nov-2026): la IA leyó "R 32 DILS" como NEGATIVO en un PDF-imagen ──
+  // 1) La "R" de reactivo a veces sale como "8" ("8.2 DILS" = R 2 DILS).
+  const vd = _normTexto(v.vdrl).trim();
+  const ocrR = vd.match(/^8[.,\s]+(\d+)\s*D\s*[IL1\/]*\s*L?\s*S\.?$/);
+  if (ocrR) {
+    correcciones.vdrl = { ia: v.vdrl, aplicado: `R ${ocrR[1]} DILS` };
+    v.vdrl = `R ${ocrR[1]} DILS`;
+  }
+  // 2) El laboratorio hace la treponémica solo cuando la VDRL dio reactiva.
+  //    Si la treponémica es positiva y la VDRL figura negativa, la lectura es
+  //    dudosa: NUNCA se guarda como negativa, se manda a verificar en el PDF.
+  const trep = _normTexto(v.sifilis_treponemica).trim();
+  const trepPositiva = trep === "POSITIVO" || trep === "REACTIVO";
+  const vdrlNegativa = /^(NEGATIVO|NO REACTIVO|NR)$/.test(_normTexto(v.vdrl).trim());
+  if (trepPositiva && vdrlNegativa) {
+    correcciones.vdrl = { ia: v.vdrl, aplicado: "VERIFICAR EN PDF", motivo: "treponémica positiva" };
+    v.vdrl = "VERIFICAR EN PDF (treponémica positiva)";
+  }
+
   delete v.hepatitis_b_anti_core_valor;
   delete v.hepatitis_b_anti_core_referencia;
   if (Object.keys(correcciones).length) {
