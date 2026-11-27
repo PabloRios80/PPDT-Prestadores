@@ -109,7 +109,15 @@ app.get("/verificar-afiliado/:dni", async (req, res) => {
   const dni = String(req.params.dni || "").trim();
   if (!dni) return res.status(400).json({ esActivo: false, error: "DNI vacío" });
   try {
-    return res.json(await consultarPadronIapos(dni));
+    // El padrón puede tener el DNI con o sin ceros adelante: se prueban
+    // todas las formas y vale la primera que dé afiliado activo.
+    let primera = null;
+    for (const variante of dniVariantes(dni)) {
+      const r = await consultarPadronIapos(variante);
+      if (r.esActivo) return res.json({ ...r, dniPadron: variante });
+      if (!primera) primera = r;
+    }
+    return res.json(primera);
   } catch (e) {
     console.error(
       `⚠️ Padrón IAPOS DNI ${dni}:`,
