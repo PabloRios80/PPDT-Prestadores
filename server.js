@@ -26,6 +26,17 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY,
 );
 
+// ── DNI: el mismo paciente puede estar guardado con o sin ceros adelante
+// (6287120 / 06287120). Todas las búsquedas por DNI usan las dos formas.
+function dniVariantes(dni) {
+  const original = String(dni == null ? "" : dni).trim();
+  const digitos = original.replace(/\D/g, "");
+  const canon = digitos.replace(/^0+/, "");
+  const set = new Set([original, digitos, canon]);
+  if (canon && canon.length < 8) set.add(canon.padStart(8, "0"));
+  return [...set].filter(Boolean);
+}
+
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
@@ -307,7 +318,7 @@ app.get("/getPracticasPrestador/:dni/:especialidad", async (req, res) => {
     const { data: existing } = await supabase
       .from("practicas_autorizadas")
       .select("id")
-      .eq("dni", dni)
+      .in("dni", dniVariantes(dni))
       .limit(1);
 
     if (!existing || existing.length === 0) {
@@ -318,7 +329,7 @@ app.get("/getPracticasPrestador/:dni/:especialidad", async (req, res) => {
     const { data: todasLasPracticas, error } = await supabase
       .from("practicas_autorizadas")
       .select("*")
-      .eq("dni", dni);
+      .in("dni", dniVariantes(dni));
 
     if (error) throw error;
 
@@ -333,8 +344,8 @@ app.get("/getPracticasPrestador/:dni/:especialidad", async (req, res) => {
     const { data: afiliado } = await supabase
       .from("afiliados")
       .select("nombre, apellido")
-      .eq("dni", dni)
-      .single();
+      .in("dni", dniVariantes(dni))
+      .limit(1).single();
 
     const practicasConNombre = (data || []).map((p) => ({
       ...p,
@@ -359,8 +370,8 @@ app.get("/getPreventivePlan/:dni", async (req, res) => {
     const { data: afiliado, error: errorAfiliado } = await supabase
       .from("afiliados")
       .select("*")
-      .eq("dni", dni)
-      .single();
+      .in("dni", dniVariantes(dni))
+      .limit(1).single();
 
     if (errorAfiliado || !afiliado) {
       return res.json({ success: false, message: "Afiliado no encontrado." });
@@ -369,19 +380,19 @@ app.get("/getPreventivePlan/:dni", async (req, res) => {
     const { data: historial } = await supabase
       .from("historial_dia_preventivo")
       .select("*")
-      .eq("dni", dni)
+      .in("dni", dniVariantes(dni))
       .order("fechax", { ascending: false });
 
     const { data: practicasHistoricas } = await supabase
       .from("practicas_historicas")
       .select("*")
-      .eq("dni", dni)
+      .in("dni", dniVariantes(dni))
       .order("fecha", { ascending: false });
 
     const { data: practicasYaAutorizadas } = await supabase
       .from("practicas_autorizadas")
       .select("*")
-      .eq("dni", dni)
+      .in("dni", dniVariantes(dni))
       .in("estado", ["AUTORIZADA", "REALIZADA"]);
 
     const { data: reglas } = await supabase
@@ -845,8 +856,8 @@ app.post("/savePracticeResult", async (req, res) => {
         const { data: afiliadoPdf } = await supabase
           .from("afiliados")
           .select("nombre, apellido")
-          .eq("dni", dni)
-          .single();
+          .in("dni", dniVariantes(dni))
+          .limit(1).single();
         const nombrePacientePdf = afiliadoPdf
           ? `${afiliadoPdf.apellido} ${afiliadoPdf.nombre}`
           : dni;
@@ -933,7 +944,7 @@ app.post("/savePracticeResult", async (req, res) => {
       const { data: autorizadas } = await supabase
         .from("practicas_autorizadas")
         .select("id, codigo_prestacion, fecha_autorizacion")
-        .eq("dni", dni)
+        .in("dni", dniVariantes(dni))
         .ilike("descripcion_practica", descripcion)
         .eq("estado", "AUTORIZADA")
         .order("fecha_autorizacion", { ascending: true });
@@ -953,7 +964,7 @@ app.post("/savePracticeResult", async (req, res) => {
       const { data: yaCargadas } = await supabase
         .from("practicas_autorizadas")
         .select("id")
-        .eq("dni", dni)
+        .in("dni", dniVariantes(dni))
         .ilike("descripcion_practica", descripcion)
         .eq("estado", "REALIZADA")
         .gte("fecha_carga", hace60)
@@ -988,7 +999,7 @@ app.post("/savePracticeResult", async (req, res) => {
     const { data: admisionReciente } = await supabase
       .from("tablero_dia")
       .select("id_sede_dp")
-      .eq("dni", dni)
+      .in("dni", dniVariantes(dni))
       .order("fecha", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -1025,8 +1036,8 @@ app.post("/savePracticeResult", async (req, res) => {
       const { data: afiliado } = await supabase
         .from("afiliados")
         .select("nombre, apellido")
-        .eq("dni", dni)
-        .single();
+        .in("dni", dniVariantes(dni))
+        .limit(1).single();
       const nombreCompleto = afiliado
         ? `${afiliado.apellido} ${afiliado.nombre}`
         : null;
@@ -1087,10 +1098,10 @@ app.post("/savePracticeResult", async (req, res) => {
       const { data: historico } = await supabase
         .from("practicas_historicas")
         .select("id, link_pdf_por_practica")
-        .eq("dni", dni)
+        .in("dni", dniVariantes(dni))
         .eq("tipo_practica", "laboratorio")
         .eq("fecha", hoy)
-        .single();
+        .limit(1).single();
 
       // El PDF de una práctica cargada individualmente NUNCA pisa el link_pdf
       // general (el de la carga masiva por IA, que cubre la mayoría de las
@@ -1122,8 +1133,8 @@ app.post("/savePracticeResult", async (req, res) => {
         const { data: afil } = await supabase
           .from("afiliados")
           .select("nombre, apellido")
-          .eq("dni", dni)
-          .single();
+          .in("dni", dniVariantes(dni))
+          .limit(1).single();
         await supabase.from("practicas_historicas").insert({
           dni,
           nombre: afil?.nombre || null,
@@ -1146,9 +1157,9 @@ app.post("/savePracticeResult", async (req, res) => {
         const { data: kitExistente } = await supabase
           .from("kits_seguimiento")
           .select("id")
-          .eq("dni", dni)
+          .in("dni", dniVariantes(dni))
           .eq("tipo_kit", "SOMF")
-          .maybeSingle();
+          .limit(1).maybeSingle();
 
         if (kitExistente) {
           await supabase
@@ -1193,8 +1204,8 @@ app.get("/getDatosAfiliado/:dni", async (req, res) => {
     const { data: afiliado } = await supabase
       .from("afiliados")
       .select("edad, sexo_biologico")
-      .eq("dni", req.params.dni)
-      .single();
+      .in("dni", dniVariantes(req.params.dni))
+      .limit(1).single();
 
     if (!afiliado) return res.json({ success: false });
     res.json({ success: true, afiliado });
@@ -1244,10 +1255,10 @@ app.post("/marcarFacturadas", async (req, res) => {
       const { data: existente } = await supabase
         .from("practicas_autorizadas")
         .select("id")
-        .eq("dni", p.dni)
+        .in("dni", dniVariantes(p.dni))
         .ilike("descripcion_practica", p.descripcion)
         .eq("id_prestador", idPrestador)
-        .single();
+        .limit(1).single();
 
       if (existente) {
         await supabase
@@ -1409,7 +1420,7 @@ app.post("/verificarPracticasDuplicadas", async (req, res) => {
       const { data } = await supabase
         .from("practicas_autorizadas")
         .select("id")
-        .eq("dni", dni)
+        .in("dni", dniVariantes(dni))
         .ilike("descripcion_practica", `%${practica.descripcion}%`)
         .eq("estado", "REALIZADA");
 
@@ -1483,7 +1494,7 @@ app.delete("/eliminarPractica/:id", async (req, res) => {
       const { data: gemelaSios } = await supabase
         .from("practicas_autorizadas")
         .select("id")
-        .eq("dni", fila.dni)
+        .in("dni", dniVariantes(fila.dni))
         .eq("descripcion_practica", "Práctica bioquímica")
         .eq("fecha_carga", fila.fecha_carga)
         .eq("cargado_sios", true)
@@ -1537,7 +1548,7 @@ app.delete("/eliminarPractica/:id", async (req, res) => {
       const { error } = await supabase
         .from("practicas_autorizadas")
         .update(resetCampos)
-        .eq("dni", fila.dni)
+        .in("dni", dniVariantes(fila.dni))
         .eq("descripcion_practica", "Práctica bioquímica")
         .eq("fecha_carga", fila.fecha_carga);
       if (error) throw error;
@@ -1565,10 +1576,10 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
     const { data: registro } = await supabase
       .from("tablero_dia")
       .select("id")
-      .eq("dni", dni)
+      .in("dni", dniVariantes(dni))
       .gte("fecha", hoy)
       .lte("fecha", hoy)
-      .maybeSingle();
+      .limit(1).maybeSingle();
 
     if (registro) {
       const updatePayload = {
@@ -1601,7 +1612,7 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
       const { data: yaExiste } = await supabase
         .from("practicas_autorizadas")
         .select("id")
-        .eq("dni", dni)
+        .in("dni", dniVariantes(dni))
         .eq("descripcion_practica", "Práctica bioquímica")
         .eq("estado", "REALIZADA")
         .in("codigo_prestacion", ["B040103", "679900"])
@@ -1612,8 +1623,8 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
         const { data: afiliado } = await supabase
           .from("afiliados")
           .select("nombre, apellido")
-          .eq("dni", dni)
-          .single();
+          .in("dni", dniVariantes(dni))
+          .limit(1).single();
 
         const nombreCompleto = afiliado
           ? `${afiliado.apellido} ${afiliado.nombre}`
@@ -1626,7 +1637,7 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
         const { data: admisionReciente } = await supabase
           .from("tablero_dia")
           .select("id_sede_dp")
-          .eq("dni", dni)
+          .in("dni", dniVariantes(dni))
           .order("fecha", { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -1672,18 +1683,18 @@ app.post("/api/bioquimico/registrar-extraccion", async (req, res) => {
       const { data: yaExistePsa } = await supabase
         .from("practicas_autorizadas")
         .select("id")
-        .eq("dni", dni)
+        .in("dni", dniVariantes(dni))
         .eq("descripcion_practica", "PSA (Antígeno prostático específico)")
         .eq("id_prestador", idPrestador?.toString())
         .gte("fecha_carga", `${hoy}T00:00:00`)
-        .maybeSingle();
+        .limit(1).maybeSingle();
 
       if (!yaExistePsa) {
         const { data: afiliadoPsa } = await supabase
           .from("afiliados")
           .select("nombre, apellido")
-          .eq("dni", dni)
-          .single();
+          .in("dni", dniVariantes(dni))
+          .limit(1).single();
 
         await supabase.from("practicas_autorizadas").insert({
           dni,
@@ -1714,10 +1725,10 @@ async function marcarKitEnTableroDia(dni, tipoKit) {
   const { data: registro } = await supabase
     .from("tablero_dia")
     .select("id")
-    .eq("dni", dni)
+    .in("dni", dniVariantes(dni))
     .gte("fecha", hoy)
     .lte("fecha", hoy)
-    .maybeSingle();
+    .limit(1).maybeSingle();
   if (registro) {
     await supabase
       .from("tablero_dia")
@@ -1734,9 +1745,9 @@ app.post("/api/kits/entregar", async (req, res) => {
     const { data: existente } = await supabase
       .from("kits_seguimiento")
       .select("id")
-      .eq("dni", dni)
+      .in("dni", dniVariantes(dni))
       .eq("tipo_kit", tipo_kit)
-      .maybeSingle();
+      .limit(1).maybeSingle();
 
     const fechaEntrega = new Date().toISOString();
 
@@ -1777,9 +1788,9 @@ app.post("/api/kits/recibir", async (req, res) => {
     const { data: existente } = await supabase
       .from("kits_seguimiento")
       .select("id")
-      .eq("dni", dni)
+      .in("dni", dniVariantes(dni))
       .eq("tipo_kit", tipo_kit)
-      .maybeSingle();
+      .limit(1).maybeSingle();
 
     if (existente) {
       await supabase
@@ -1855,9 +1866,9 @@ app.post("/api/kits/deshacer", async (req, res) => {
     const { data: registro } = await supabase
       .from("kits_seguimiento")
       .select("*")
-      .eq("dni", dni)
+      .in("dni", dniVariantes(dni))
       .eq("tipo_kit", tipo_kit)
-      .maybeSingle();
+      .limit(1).maybeSingle();
 
     if (!registro) return res.json({ success: true });
 
@@ -1908,10 +1919,10 @@ app.post("/api/kits/deshacer", async (req, res) => {
         const { data: td } = await supabase
           .from("tablero_dia")
           .select("id")
-          .eq("dni", dni)
+          .in("dni", dniVariantes(dni))
           .gte("fecha", fechaFila)
           .lte("fecha", fechaFila)
-          .maybeSingle();
+          .limit(1).maybeSingle();
         if (td)
           await supabase
             .from("tablero_dia")
@@ -1945,7 +1956,7 @@ app.post("/api/bioquimico/deshacer-extraccion", async (req, res) => {
       await supabase
         .from("practicas_autorizadas")
         .delete()
-        .eq("dni", fila.dni)
+        .in("dni", dniVariantes(fila.dni))
         .eq("descripcion_practica", "Práctica bioquímica")
         .eq("fecha_carga", fila.fecha_carga);
     } else {
@@ -1958,16 +1969,16 @@ app.post("/api/bioquimico/deshacer-extraccion", async (req, res) => {
     const { data: td } = await supabase
       .from("tablero_dia")
       .select("id")
-      .eq("dni", dni)
+      .in("dni", dniVariantes(dni))
       .gte("fecha", fechaFila)
       .lte("fecha", fechaFila)
-      .maybeSingle();
+      .limit(1).maybeSingle();
 
     if (td) {
       const { data: kits } = await supabase
         .from("kits_seguimiento")
         .select("tipo_kit, entregado, recibido")
-        .eq("dni", dni)
+        .in("dni", dniVariantes(dni))
         .in("tipo_kit", ["HPV", "SOMF"]);
 
       const tieneKitPropio = (tipo) =>
@@ -1999,7 +2010,7 @@ app.get("/api/kits-estado/:dni", async (req, res) => {
     const { data, error } = await supabase
       .from("kits_seguimiento")
       .select("*")
-      .eq("dni", req.params.dni);
+      .in("dni", dniVariantes(req.params.dni));
     if (error) throw error;
     res.json({ success: true, kits: data || [] });
   } catch (e) {
@@ -2016,9 +2027,9 @@ app.post("/api/kits/recibir", async (req, res) => {
     const { data: existente } = await supabase
       .from("kits_seguimiento")
       .select("id")
-      .eq("dni", dni)
+      .in("dni", dniVariantes(dni))
       .eq("tipo_kit", tipo_kit)
-      .maybeSingle();
+      .limit(1).maybeSingle();
 
     if (existente) {
       await supabase
@@ -2071,7 +2082,7 @@ app.get("/api/bioquimico/seguimiento/:dni", async (req, res) => {
     const { data } = await supabase
       .from("practicas_autorizadas")
       .select("id, descripcion_practica, fecha_autorizacion")
-      .eq("dni", dni)
+      .in("dni", dniVariantes(dni))
       .eq("estado", "AUTORIZADA")
       .in("descripcion_practica", CATALOGO_SEGUIMIENTO_BIO)
       .gte("fecha_autorizacion", hace30dias.toISOString().split("T")[0])
@@ -2106,8 +2117,8 @@ app.post("/api/bioquimico/seguimiento/marcar", async (req, res) => {
     const { data: afiliado } = await supabase
       .from("afiliados")
       .select("nombre, apellido")
-      .eq("dni", dni)
-      .single();
+      .in("dni", dniVariantes(dni))
+      .limit(1).single();
 
     await supabase.from("practicas_autorizadas").insert({
       dni,
@@ -2145,7 +2156,7 @@ app.get("/api/bioquimico/ultima-extraccion/:dni", async (req, res) => {
     const { data } = await supabase
       .from("practicas_autorizadas")
       .select("id, fecha_carga, nombre_prestador")
-      .eq("dni", dni)
+      .in("dni", dniVariantes(dni))
       .eq("descripcion_practica", "Práctica bioquímica")
       .gte("fecha_carga", hace30dias.toISOString())
       .order("fecha_carga", { ascending: false })
